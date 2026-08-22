@@ -142,7 +142,7 @@ test("evidence rejects external manifests, symlink artifacts, and missing action
   });
 });
 
-test("optional override loader uses the Doc-Vader parser and built-ins by default", async () => {
+test("optional override loader validates command argv compatibility and uses built-ins by default", async () => {
   const { loadRepositoryOverride } = await loadOverride();
   await withFixture({}, async (root) => {
     const loaded = await loadRepositoryOverride({ repositoryRoot: root });
@@ -188,7 +188,7 @@ test("blueprint composed real Git fixtures preserve delivery policy", async (t) 
           policy: { changedPaths: async () => ["README.md"], authorize: async () => true }, journal: { append: async () => {} },
           review: { request: async () => { reviews += 1; return setup.review?.(reviews) ?? { verdict: "approved", reviewer: { identity: `reviewer-${reviews}`, context: `review-${reviews}` } }; } },
           acceptance: { execute: async () => ({ passed: true }) },
-          dv: { close: async () => { closes += 1; if (setup.closeFails) throw new Error("close failed"); return { schemaVersion: "task-close/v1", id: "wi-005", status: "closed", lifecycle: "closed" }; } },
+          publisher: { close: async () => { closes += 1; if (setup.closeFails) throw new Error("close failed"); return { publisherReceipt: "closed-wi-005" }; } },
           workspace: { commitTracked: async ({ cwd }) => { writeFileSync(path.join(cwd, "closure.txt"), "closed\n"); gitIn(cwd, ["add", "closure.txt"]); gitIn(cwd, ["commit", "-m", "closure"]); return { committed: true }; } }, integration: transaction,
         });
         const blueprint = createAfkDeliveryBlueprint({ worktreeTransaction: transaction, delivery: coordinator, publisherSelection: validPublisherSelectionPort(), state: { transition: async () => {} } });
@@ -245,7 +245,7 @@ test("composed coordinator guards every side effect and leaves reconstructable t
       journal: { append: async (event) => calls.push(`journal:${event.type}`) },
       review: { request: async () => ({ verdict: "approved", reviewer: { identity: "reviewer", context: "review-1" } }) },
       acceptance: { execute: async () => ({ passed: true }) },
-      dv: { close: async () => { calls.push("close"); return { schemaVersion: "task-close/v1", id: "wi-005", status: "closed", lifecycle: "closed" }; } },
+      publisher: { close: async () => { calls.push("close"); return { publisherReceipt: "closed-wi-005" }; } },
       workspace: { commitTracked: async () => { calls.push("commit"); return { committed: true }; } },
       integration: { deliver: async () => { calls.push("deliver"); return { status: "delivered" }; } },
     });
@@ -270,7 +270,7 @@ test("v6 process resolves ports from JSON-selected importable configuration", as
   const { process } = await import("../blueprints/babysitter-afk-v6/process.mjs");
   await withFixture({}, async (root) => {
     const config = path.join(root, "ports.mjs");
-    await writeFile(config, `export function createPorts() { return { maxReviewCycles: 10, worktreeTransaction: { withEvidenceGuard: () => {}, prepareItem: async () => ({ itemId: "wi-005", worktree: "/item" }) }, delivery: { review: async () => ({ status: "delivered" }) }, publisherSelection: { select: async ({ request }) => ({ capability: "publisher-work-selection/v1", outcome: { kind: "selected", workItemId: request.workItemId }, decisionArtifact: { result: { schemaVersion: "task-ready/v1", candidates: [{ id: request.workItemId }] } } }) }, state: { transition: async () => {} } }; }`);
+    await writeFile(config, `export function createPorts() { return { maxReviewCycles: 10, worktreeTransaction: { withEvidenceGuard: () => {}, prepareItem: async () => ({ itemId: "wi-005", worktree: "/item" }) }, delivery: { review: async () => ({ status: "delivered" }) }, publisherSelection: { select: async ({ request }) => ({ capability: "publisher-work-selection/v1", outcome: { kind: "selected", workItemId: request.workItemId }, decisionArtifact: { command: ["publisher", "select"], result: { schemaVersion: "task-ready/v1", candidates: [{ id: request.workItemId }] } } }) }, state: { transition: async () => {} } }; }`);
     const result = await process({ configModule: config, runInput: { itemId: "wi-005", cwd: root, runDirectory: path.join(root, "run") } }, { task: async () => ({}) });
     assert.equal(result.status, "delivered");
     await assert.rejects(process({ runInput: {} }, { task: async () => ({}) }), /configModule/i);
@@ -324,9 +324,9 @@ test("publisher-owned selection gates every guarded delivery effect and preserve
     });
   });
   for (const [name, select] of [
-    ["typed non-selection", async () => ({ capability: "publisher-work-selection/v1", outcome: { kind: "not-selected", code: "PUBLISHER_DEFINED" }, decisionArtifact: {} })],
-    ["unsupported capability", async () => ({ capability: "publisher-work-selection/v2", outcome: { kind: "selected", workItemId: "wi-005" }, decisionArtifact: {} })],
-    ["identity mismatch", async () => ({ capability: "publisher-work-selection/v1", outcome: { kind: "selected", workItemId: "wi-006" }, decisionArtifact: {} })],
+    ["typed non-selection", async () => ({ capability: "publisher-work-selection/v1", outcome: { kind: "not-selected", code: "PUBLISHER_DEFINED" }, decisionArtifact: { command: ["publisher", "select"], result: { diagnostic: "opaque" } } })],
+    ["unsupported capability", async () => ({ capability: "publisher-work-selection/v2", outcome: { kind: "selected", workItemId: "wi-005" }, decisionArtifact: { command: ["publisher", "select"], result: { opaque: true } } })],
+    ["identity mismatch", async () => ({ capability: "publisher-work-selection/v1", outcome: { kind: "selected", workItemId: "wi-006" }, decisionArtifact: { command: ["publisher", "select"], result: { opaque: true } } })],
     ["publisher failure", async () => { throw new Error("publisher unavailable"); }],
   ]) {
     await t.test(`${name} pauses before every guarded delivery effect`, async () => {
@@ -340,7 +340,9 @@ test("publisher-owned selection gates every guarded delivery effect and preserve
         assert.deepEqual(harness.deliveryCalls, []);
         if (name === "typed non-selection") {
           const journal = (await readFile(path.join(root, "evidence", "journal.ndjson"), "utf8")).split("\n").filter(Boolean).map(JSON.parse);
-          assert.equal(journal.find((event) => event.type === "publisher-selection").response.outcome.code, "PUBLISHER_DEFINED");
+          const selectionEvent = journal.find((event) => event.type === "publisher-selection");
+          assert.equal(selectionEvent.response.outcome.code, "PUBLISHER_DEFINED");
+          assert.deepEqual(selectionEvent.response.decisionArtifact, { command: ["publisher", "select"], result: { diagnostic: "opaque" } });
         }
       });
     });

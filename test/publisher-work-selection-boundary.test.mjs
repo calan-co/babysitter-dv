@@ -28,9 +28,12 @@ test("accepts only an explicit publisher-selected requested identity without dec
   });
 });
 
-test("returns typed non-selections with opaque publisher diagnostics", async () => {
+test("returns typed non-selections with opaque publisher diagnostics and preserves all evidence", async () => {
   const { decodePublisherWorkSelection } = await loadBoundary();
-  const response = selected({ outcome: { kind: "not-selected", code: "PUBLISHER_DEFINED_DIAGNOSTIC" } });
+  const response = selected({
+    outcome: { kind: "not-selected", code: "PUBLISHER_DEFINED_DIAGNOSTIC" },
+    decisionArtifact: { command: ["publisher", "select"], artifact: { opaqueReceipt: true } },
+  });
 
   assert.deepEqual(decodePublisherWorkSelection(request(), response), {
     kind: "not-selected",
@@ -40,7 +43,29 @@ test("returns typed non-selections with opaque publisher diagnostics", async () 
   });
 });
 
-test("fails closed for malformed transport, unsupported capability, missing evidence, and identity mismatch", async () => {
+test("requires non-empty opaque command and result or artifact transport fields without decoding them", async () => {
+  const { decodePublisherWorkSelection } = await loadBoundary();
+  const opaqueResult = { publisherDefined: { nested: "value" } };
+  const response = selected({ decisionArtifact: { command: ["arbitrary", 42], result: opaqueResult } });
+
+  assert.strictEqual(decodePublisherWorkSelection(request(), response).decisionArtifact.result, opaqueResult);
+  for (const decisionArtifact of [
+    {},
+    { command: [], result: opaqueResult },
+    { command: ["publisher"] },
+    { command: ["publisher"], result: {} },
+    { command: ["publisher"], artifact: {} },
+    { command: "publisher", result: opaqueResult },
+    { command: ["publisher"], result: null },
+  ]) {
+    assert.throws(
+      () => decodePublisherWorkSelection(request(), selected({ decisionArtifact })),
+      /command|result|artifact|evidence|selection/i,
+    );
+  }
+});
+
+test("fails closed for malformed transport, unsupported capability, and identity mismatch", async () => {
   const { decodePublisherWorkSelection } = await loadBoundary();
   for (const response of [
     undefined,

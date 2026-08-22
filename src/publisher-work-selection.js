@@ -9,6 +9,21 @@ function record(value, label) {
   return value;
 }
 
+function selectionEvidence(value) {
+  const evidence = record(value, "publisher decision artifact");
+  if (!Array.isArray(evidence.command) || evidence.command.length === 0) {
+    invalid("publisher decision command must be a non-empty opaque array");
+  }
+  if (![evidence.result, evidence.artifact].some(isNonEmptyOpaqueEvidence)) {
+    invalid("publisher decision result or artifact must be non-empty opaque evidence");
+  }
+  return evidence;
+}
+
+function isNonEmptyOpaqueEvidence(value) {
+  return value && typeof value === "object" && !Array.isArray(value) && Reflect.ownKeys(value).length > 0;
+}
+
 /**
  * Check only the stable publisher-selection transport. Work-result schemas,
  * readiness semantics, and diagnostic-code meanings remain publisher-owned.
@@ -22,7 +37,7 @@ export function decodePublisherWorkSelection(request, response) {
 
   const publisherResponse = record(response, "response");
   if (publisherResponse.capability !== PUBLISHER_WORK_SELECTION_CAPABILITY) invalid("unsupported publisher capability or version");
-  const decisionArtifact = record(publisherResponse.decisionArtifact, "publisher decision artifact");
+  const decisionArtifact = selectionEvidence(publisherResponse.decisionArtifact);
   const outcome = record(publisherResponse.outcome, "publisher outcome");
 
   if (outcome.kind === "selected") {

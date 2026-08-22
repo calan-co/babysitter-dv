@@ -1,88 +1,7 @@
 const CONTRACT_VERSION = "doc-vader-contract/v1";
 
-const schema = (name, properties, required) => Object.freeze({
-  $schema: "https://json-schema.org/draft/2020-12/schema",
-  $id: `https://babysitter.dev/schemas/doc-vader/${name}/v1.schema.json`,
-  type: "object",
-  additionalProperties: true,
-  required,
-  properties,
-});
-
-/** Versioned JSON Schema documents for accepted structured Doc-Vader results. */
-export const resultSchemas = Object.freeze({
-  show: schema("work-show", {
-    schemaVersion: { const: "task-model/v1" },
-    id: { type: "string", minLength: 1 },
-    title: { type: "string" },
-    filePath: { type: "string", minLength: 1 },
-    status: { type: "string" }, lifecycle: { type: "string" },
-    tags: { type: "array", items: { type: "string" } },
-    dependencies: { type: "array", items: { type: "string" } },
-    body: { type: "object" }, acceptanceCriteria: { type: "array" },
-    validation: { type: "object" }, runtime: { type: "object" },
-  }, ["schemaVersion", "id", "title", "filePath", "status", "lifecycle", "tags", "dependencies", "body", "acceptanceCriteria", "validation", "runtime"]),
-  statusValidate: schema("work-status-validate", {
-    schemaVersion: { const: "task-status/v1" }, id: { type: "string", minLength: 1 },
-    title: { type: "string" }, filePath: { type: "string", minLength: 1 },
-    status: { type: "string" }, lifecycle: { type: "string" },
-    validation: {
-      type: "object",
-      additionalProperties: true,
-      required: ["isActive", "isReady", "isAfk", "isHitl", "dependenciesSatisfied"],
-      properties: {
-        isActive: { type: "boolean" },
-        isReady: { type: "boolean" },
-        isAfk: { type: "boolean" },
-        isHitl: { type: "boolean" },
-        dependenciesSatisfied: { type: "boolean" },
-      },
-    },
-    runtime: { type: "object" }, recovery: { type: "object" }, graph: { type: "object" },
-  }, ["schemaVersion", "id", "title", "filePath", "status", "lifecycle", "validation", "runtime", "recovery", "graph"]),
-  close: schema("work-close", {
-    schemaVersion: { const: "task-close/v1" }, id: { type: "string", minLength: 1 },
-    status: { const: "closed" }, lifecycle: { const: "closed" },
-  }, ["schemaVersion", "id", "status", "lifecycle"]),
-  repositoryOverride: schema("repository-override", {
-    schemaVersion: { const: "doc-vader-override/v1" },
-    compatibleWith: {
-      type: "array",
-      minItems: 1,
-      items: { type: "string" },
-      contains: { const: CONTRACT_VERSION },
-    },
-    commands: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        ready: {
-          type: "array", minItems: 1,
-          items: { type: "string", minLength: 1 },
-          contains: { const: "--json" },
-        },
-        show: {
-          type: "array", minItems: 1,
-          items: { type: "string", minLength: 1 },
-          allOf: [{ contains: { const: "--json" } }, { contains: { const: "{workId}" } }],
-        },
-        validate: {
-          type: "array", minItems: 1,
-          items: { type: "string", minLength: 1 },
-          allOf: [{ contains: { const: "--json" } }, { contains: { const: "{workId}" } }],
-        },
-        close: {
-          type: "array", minItems: 1,
-          items: { type: "string", minLength: 1 },
-          allOf: [{ contains: { const: "--json" } }, { contains: { const: "{workId}" } }],
-        },
-      },
-    },
-  }, ["schemaVersion", "compatibleWith", "commands"]),
-});
-
 function invalid(message) {
-  throw new TypeError(`Invalid structured Doc-Vader output: ${message}`);
+  throw new TypeError(`Invalid repository command override: ${message}`);
 }
 
 function requireObject(value, label) {
@@ -90,57 +9,17 @@ function requireObject(value, label) {
   return value;
 }
 
-function requireString(value, label) {
-  if (typeof value !== "string" || value.length === 0) invalid(`${label} must be a non-empty string`);
-}
-
-function requireBoolean(value, label) {
-  if (typeof value !== "boolean") invalid(`${label} must be a boolean`);
-}
-
 function requireArray(value, label) {
   if (!Array.isArray(value)) invalid(`${label} must be an array`);
 }
 
-function requireVersion(result, version) {
-  requireObject(result, "result");
-  if (result.schemaVersion !== version) invalid(`unsupported schema version ${String(result.schemaVersion)}`);
-}
-
-/** Parse the canonical `dv work show --json` result; no Markdown fallback exists. */
-export function parseShowResult(result) {
-  requireVersion(result, "task-model/v1");
-  for (const key of ["id", "title", "filePath", "status", "lifecycle"]) requireString(result[key], key);
-  for (const key of ["tags", "dependencies", "acceptanceCriteria"]) requireArray(result[key], key);
-  for (const key of ["body", "validation", "runtime"]) requireObject(result[key], key);
-  if (!result.tags.every((value) => typeof value === "string") || !result.dependencies.every((value) => typeof value === "string")) invalid("show arrays must contain strings");
-  return result;
-}
-
-/** Parse the canonical `dv work status --validate --json` result. */
-export function parseStatusValidateResult(result) {
-  requireVersion(result, "task-status/v1");
-  for (const key of ["id", "title", "filePath", "status", "lifecycle"]) requireString(result[key], key);
-  for (const key of ["validation", "runtime", "recovery", "graph"]) requireObject(result[key], key);
-  for (const key of ["isActive", "isReady", "isAfk", "isHitl", "dependenciesSatisfied"]) requireBoolean(result.validation[key], `validation.${key}`);
-  return result;
-}
-
-/** Parse the canonical structured close acknowledgement. */
-export function parseCloseResult(result) {
-  requireVersion(result, "task-close/v1");
-  requireString(result.id, "id");
-  if (result.status !== "closed" || result.lifecycle !== "closed") invalid("close result must confirm closed status and lifecycle");
-  return result;
-}
-
 /**
- * Validate an optional repository command override. Overrides may change argv
- * construction only; every declared command remains JSON-only and must return
- * the corresponding built-in versioned result schema.
+ * Validate only the Babysitter-owned repository command-argv compatibility
+ * declaration. Publisher command results remain opaque to Babysitter.
  */
 export function parseRepositoryOverride(override) {
-  requireVersion(override, "doc-vader-override/v1");
+  requireObject(override, "override");
+  if (override.schemaVersion !== "doc-vader-override/v1") invalid(`unsupported schema version ${String(override.schemaVersion)}`);
   requireArray(override.compatibleWith, "compatibleWith");
   if (!override.compatibleWith.every((version) => typeof version === "string")) invalid("compatibleWith must contain only strings");
   if (!override.compatibleWith.includes(CONTRACT_VERSION)) invalid(`override is not compatible with ${CONTRACT_VERSION}`);
@@ -156,6 +35,7 @@ export function parseRepositoryOverride(override) {
   return override;
 }
 
+/** Built-in command argv compatibility defaults; no result decoder is supplied. */
 export const builtInCommands = Object.freeze({
   ready: () => ["dv", "work", "ready", "--json"],
   show: (workId) => ["dv", "work", "show", workId, "--json"],
