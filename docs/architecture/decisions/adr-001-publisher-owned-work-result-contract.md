@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-21
 - **Deciders:** Babysitter-DV maintainers
-- **Related work item:** [[../../../../backlog/006-publisher-owned-work-result-contract-boundary.md]]
+- **Related work item:** [[../../../backlog/006-publisher-owned-work-result-contract-boundary.md]]
 - **External dependency:** Doc-Vader POC defect `ttr-dec7d9a9-b46f-45e8-8af5-65a9792b820a`
 
 ## Context
