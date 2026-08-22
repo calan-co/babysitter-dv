@@ -1,4 +1,3 @@
-const SCHEMA_VERSION = "v1";
 const CONTRACT_VERSION = "doc-vader-contract/v1";
 
 const schema = (name, properties, required) => Object.freeze({
@@ -12,25 +11,6 @@ const schema = (name, properties, required) => Object.freeze({
 
 /** Versioned JSON Schema documents for accepted structured Doc-Vader results. */
 export const resultSchemas = Object.freeze({
-  ready: schema("work-ready", {
-    schemaVersion: { const: "v1" },
-    workItems: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: true,
-        required: ["id", "priority", "status", "afk", "hitl", "dependencies"],
-        properties: {
-          id: { type: "string", minLength: 1 },
-          priority: { enum: ["critical", "high", "medium", "low"] },
-          status: { type: "string" },
-          afk: { type: "boolean" },
-          hitl: { type: "boolean" },
-          dependencies: { type: "array", items: { type: "string" } },
-        },
-      },
-    },
-  }, ["schemaVersion", "workItems"]),
   show: schema("work-show", {
     schemaVersion: { const: "task-model/v1" },
     id: { type: "string", minLength: 1 },
@@ -101,36 +81,8 @@ export const resultSchemas = Object.freeze({
   }, ["schemaVersion", "compatibleWith", "commands"]),
 });
 
-const priorityRank = Object.freeze({
-  critical: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-});
-
 function invalid(message) {
   throw new TypeError(`Invalid structured Doc-Vader output: ${message}`);
-}
-
-function validateItem(item, index) {
-  if (!item || typeof item !== "object" || Array.isArray(item)) {
-    invalid(`workItems[${index}] must be an object`);
-  }
-  if (typeof item.id !== "string" || item.id.length === 0) {
-    invalid(`workItems[${index}].id must be a non-empty string`);
-  }
-  if (!Object.hasOwn(priorityRank, item.priority)) {
-    invalid(`${item.id}.priority is invalid`);
-  }
-  if (typeof item.status !== "string") {
-    invalid(`${item.id}.status must be a string`);
-  }
-  if (typeof item.afk !== "boolean" || typeof item.hitl !== "boolean") {
-    invalid(`${item.id} must specify boolean afk and hitl values`);
-  }
-  if (!Array.isArray(item.dependencies) || !item.dependencies.every((id) => typeof id === "string")) {
-    invalid(`${item.id}.dependencies must be an array of work IDs`);
-  }
 }
 
 function requireObject(value, label) {
@@ -155,29 +107,6 @@ function requireVersion(result, version) {
   if (result.schemaVersion !== version) invalid(`unsupported schema version ${String(result.schemaVersion)}`);
 }
 
-function parseReadyResult(result) {
-  if (!result || typeof result !== "object" || Array.isArray(result)) {
-    invalid("missing or malformed result; structured dv output is required");
-  }
-  if (result.schemaVersion !== SCHEMA_VERSION) {
-    invalid(`unsupported schema version ${String(result.schemaVersion)}`);
-  }
-  if (!Array.isArray(result.workItems)) {
-    invalid("workItems must be an array");
-  }
-  result.workItems.forEach(validateItem);
-  return result.workItems;
-}
-
-function ineligibility(item) {
-  if (item.status === "ambiguous") return "has ambiguous readiness";
-  if (item.status !== "ready") return `has status ${item.status}`;
-  if (!item.afk) return "is not AFK-ready";
-  if (item.hitl) return "requires HITL";
-  if (item.dependencies.length > 0) return "has unresolved dependencies";
-  return null;
-}
-
 /** Parse the canonical `dv work show --json` result; no Markdown fallback exists. */
 export function parseShowResult(result) {
   requireVersion(result, "task-model/v1");
@@ -195,20 +124,6 @@ export function parseStatusValidateResult(result) {
   for (const key of ["validation", "runtime", "recovery", "graph"]) requireObject(result[key], key);
   for (const key of ["isActive", "isReady", "isAfk", "isHitl", "dependenciesSatisfied"]) requireBoolean(result.validation[key], `validation.${key}`);
   return result;
-}
-
-/** Fail closed unless the selected work item remains ready after DV validation. */
-export function validateReadyWork(result, workId) {
-  const status = parseStatusValidateResult(result);
-  if (status.id !== workId) invalid(`validation result is for ${status.id}, expected ${workId}`);
-  const validation = status.validation;
-  if (
-    status.status !== "ready" || !validation.isActive || !validation.isReady
-    || !validation.isAfk || validation.isHitl || !validation.dependenciesSatisfied
-  ) {
-    invalid(`work item ${workId} is not AFK-ready after validation`);
-  }
-  return status;
 }
 
 /** Parse the canonical structured close acknowledgement. */
@@ -247,35 +162,3 @@ export const builtInCommands = Object.freeze({
   validate: (workId) => ["dv", "work", "status", workId, "--validate", "--json"],
   close: (workId) => ["dv", "work", "close", workId, "--json"],
 });
-
-/**
- * Select from the structured result of the built-in `dv work ready --json`
- * contract. This module deliberately performs no filesystem or Markdown reads.
- */
-export function selectReadyWork(result, { workId } = {}) {
-  const workItems = parseReadyResult(result);
-  const candidates = workId === undefined
-    ? workItems
-    : workItems.filter((item) => item.id === workId);
-
-  if (workId !== undefined && candidates.length !== 1) {
-    invalid(candidates.length === 0 ? `work item ${workId} is missing` : `work item ${workId} is ambiguous`);
-  }
-
-  if (workId !== undefined) {
-    const reason = ineligibility(candidates[0]);
-    if (reason) invalid(`work item ${workId} ${reason}`);
-    return candidates[0];
-  }
-
-  const itemIds = new Set();
-  for (const item of candidates) {
-    if (itemIds.has(item.id)) invalid(`duplicate work item ID ${item.id}`);
-    itemIds.add(item.id);
-  }
-  const eligible = candidates.filter((item) => ineligibility(item) === null);
-  if (eligible.length === 0) invalid("no AFK-ready work items are available");
-  return eligible.sort((left, right) =>
-    priorityRank[left.priority] - priorityRank[right.priority] || left.id.localeCompare(right.id),
-  )[0];
-}
