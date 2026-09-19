@@ -21,7 +21,7 @@ test("preserves stale-refresh post-effect uncertainty instead of collapsing it t
       ...successfulReviewPorts(),
       review: { request: async () => ({ verdict: "approved", reviewer: { identity: "reviewer", context: `review-context-${reviewCalls += 1}` } }) },
       acceptance: { execute: async () => ({ passed: true }) },
-      dv: { close: async () => ({ schemaVersion: "task-close/v1", id: "wi-004", status: "closed", lifecycle: "closed" }) },
+      publisher: { close: async () => ({ publisherReceipt: "closed-wi-004" }) },
       workspace: { commitTracked: async () => ({ committed: true }) },
       integration: {
         deliver: async () => ({ status: "stale", recovery: { item, strategy: "merge-commit", attempt: 0 } }),
@@ -58,7 +58,7 @@ test("returns a changes-requested review's exact findings without closing or int
         reviewer: { identity: "reviewer", context: "review-context" },
       }),
     },
-    dv: {
+    publisher: {
       close: async () => calls.push("dv-close"),
     },
     integration: {
@@ -85,7 +85,7 @@ test("pauses and preserves the workspace when an independent reviewer is blocked
         reviewer: { identity: "reviewer", context: "review-context" },
       }),
     },
-    dv: {
+    publisher: {
       close: async () => calls.push("dv-close"),
     },
     integration: {
@@ -121,7 +121,7 @@ test("pauses and preserves the workspace when a finding fingerprint repeats", as
         reviewer: { identity: "reviewer", context: "review-context" },
       }),
     },
-    dv: {
+    publisher: {
       close: async () => calls.push("dv-close"),
     },
     integration: {
@@ -216,7 +216,7 @@ test("rejects whitespace-equivalent reviewer identity or context before prohibit
         },
       }),
     },
-    dv: {
+    publisher: {
       close: async () => calls.push("dv-close"),
     },
     integration: {
@@ -232,15 +232,10 @@ test("rejects whitespace-equivalent reviewer identity or context before prohibit
   assert.deepEqual(calls, []);
 });
 
-test("closes a valid independently approved git-worktree transaction item by itemId, commits tracked closure changes, then integrates", async () => {
+test("calls the injected publisher closure port by itemId, commits tracked closure changes, then integrates", async () => {
   const calls = [];
   const item = { itemId: "wi-004", worktree: "/items/wi-004" };
-  const acknowledgement = {
-    schemaVersion: "task-close/v1",
-    id: item.itemId,
-    status: "closed",
-    lifecycle: "closed",
-  };
+  const acknowledgement = { publisherReceipt: { opaque: true } };
   const coordinator = createReviewRemediationCoordinator({
     ...successfulReviewPorts(),
     review: {
@@ -249,7 +244,7 @@ test("closes a valid independently approved git-worktree transaction item by ite
         reviewer: { identity: "reviewer", context: "review-context" },
       }),
     },
-    dv: {
+    publisher: {
       close: async ({ workId, cwd }) => {
         calls.push({ operation: "close", workId, cwd });
         return acknowledgement;
@@ -278,9 +273,10 @@ test("closes a valid independently approved git-worktree transaction item by ite
   ]);
 });
 
-test("pauses without committing or integrating when a close acknowledgement names a different itemId", async () => {
+test("does not decode an opaque publisher close result before committing or integrating", async () => {
   const calls = [];
   const item = { itemId: "wi-004", worktree: "/items/wi-004" };
+  const opaqueResult = { publisherDefined: { id: "another-item", status: "anything" } };
   const coordinator = createReviewRemediationCoordinator({
     ...successfulReviewPorts(),
     review: {
@@ -289,22 +285,17 @@ test("pauses without committing or integrating when a close acknowledgement name
         reviewer: { identity: "reviewer", context: "review-context" },
       }),
     },
-    dv: {
+    publisher: {
       close: async ({ workId, cwd }) => {
         calls.push({ operation: "close", workId, cwd });
-        return {
-          schemaVersion: "task-close/v1",
-          id: "wi-005",
-          status: "closed",
-          lifecycle: "closed",
-        };
+        return opaqueResult;
       },
     },
     workspace: {
-      commitTracked: async () => calls.push({ operation: "commit" }),
+      commitTracked: async () => { calls.push({ operation: "commit" }); return { committed: true }; },
     },
     integration: {
-      deliver: async () => calls.push({ operation: "integration" }),
+      deliver: async () => { calls.push({ operation: "integration" }); return { status: "delivered" }; },
     },
   });
 
@@ -313,8 +304,12 @@ test("pauses without committing or integrating when a close acknowledgement name
     implementer: { identity: "implementer", context: "implementation-context" },
   });
 
-  assert.deepEqual(result, { status: "paused" });
-  assert.deepEqual(calls, [{ operation: "close", workId: "wi-004", cwd: "/items/wi-004" }]);
+  assert.deepEqual(result, { status: "delivered" });
+  assert.deepEqual(calls, [
+    { operation: "close", workId: "wi-004", cwd: "/items/wi-004" },
+    { operation: "commit" },
+    { operation: "integration" },
+  ]);
 });
 
 test("requires an explicit committed true result before integrating an approved closure", async () => {
@@ -331,15 +326,10 @@ test("requires an explicit committed true result before integrating an approved 
           reviewer: { identity: "reviewer", context: "review-context" },
         }),
       },
-      dv: {
+      publisher: {
         close: async ({ workId, cwd }) => {
           calls.push({ operation: "close", workId, cwd });
-          return {
-            schemaVersion: "task-close/v1",
-            id: item.itemId,
-            status: "closed",
-            lifecycle: "closed",
-          };
+          return { publisherReceipt: "closed" };
         },
       },
       workspace: {
@@ -363,13 +353,12 @@ test("requires an explicit committed true result before integrating an approved 
   }
 });
 
-test("fails closed without committing or integrating when close throws or returns an invalid acknowledgement", async () => {
+test("fails closed without committing or integrating when the injected publisher close port throws", async () => {
   const item = { itemId: "wi-004", worktree: "/items/wi-004" };
   const implementer = { identity: "implementer", context: "implementation-context" };
 
   for (const close of [
-    async () => { throw new Error("DV close failed"); },
-    async () => ({ schemaVersion: "task-close/v1", id: item.itemId, status: "ready", lifecycle: "active" }),
+    async () => { throw new Error("publisher close failed"); },
   ]) {
     const calls = [];
     const coordinator = createReviewRemediationCoordinator({
@@ -380,7 +369,7 @@ test("fails closed without committing or integrating when close throws or return
           reviewer: { identity: "reviewer", context: "review-context" },
         }),
       },
-      dv: {
+      publisher: {
         close: async ({ workId, cwd }) => {
           calls.push({ operation: "close", workId, cwd });
           return close();
@@ -448,7 +437,7 @@ test("remediates changes-requested findings before each fresh review, uses two d
         return { passed: true };
       },
     },
-    dv: { close: async () => calls.push("dv-close") },
+    publisher: { close: async () => calls.push("dv-close") },
     workspace: { commitTracked: async () => calls.push("commit") },
     integration: { deliver: async () => calls.push("integration") },
   });
@@ -573,7 +562,7 @@ test("pauses before fresh review, closure, or integration unless acceptance retu
           return acceptanceResult;
         },
       },
-      dv: { close: async () => calls.push("close") },
+      publisher: { close: async () => calls.push("close") },
       workspace: { commitTracked: async () => calls.push("commit") },
       integration: { deliver: async () => calls.push("integration") },
     });
@@ -622,7 +611,7 @@ test("uses injected policy authorization to deny protected and non-global change
           };
         },
       },
-      dv: { close: async () => calls.push({ operation: "close" }) },
+      publisher: { close: async () => calls.push({ operation: "close" }) },
       integration: { deliver: async () => calls.push({ operation: "integration" }) },
     });
 
@@ -679,10 +668,10 @@ test("authorizes configured global paths and journals canonical review evidence 
         return { passed: true };
       },
     },
-    dv: {
+    publisher: {
       close: async () => {
         calls.push({ operation: "close" });
-        return { schemaVersion: "task-close/v1", id: item.itemId, status: "closed", lifecycle: "closed" };
+        return { publisherReceipt: "closed" };
       },
     },
     workspace: { commitTracked: async () => { calls.push({ operation: "commit" }); return { committed: true }; } },
@@ -829,10 +818,10 @@ test("refreshes a stale integration only through root acceptance and a fresh ind
         return { passed: true };
       },
     },
-    dv: {
+    publisher: {
       close: async () => {
         calls.push("close");
-        return { schemaVersion: "task-close/v1", id: item.itemId, status: "closed", lifecycle: "closed" };
+        return { publisherReceipt: "closed" };
       },
     },
     workspace: {
@@ -918,7 +907,7 @@ test("recomputes and reauthorizes remediation paths before acceptance, pausing p
       },
     },
     acceptance: { execute: async () => calls.push("acceptance") },
-    dv: { close: async () => calls.push("close") },
+    publisher: { close: async () => calls.push("close") },
     integration: { deliver: async () => calls.push("integration") },
   });
   const implementer = {
@@ -1023,7 +1012,7 @@ test("pauses malformed changes-requested findings without journaling them as rev
         },
       },
       acceptance: { execute: async () => calls.push("acceptance") },
-      dv: { close: async () => calls.push("close") },
+      publisher: { close: async () => calls.push("close") },
       integration: { deliver: async () => calls.push("integration") },
     });
 
@@ -1056,7 +1045,7 @@ test("pauses before closure when an approved remediation review reuses its initi
       },
     },
     acceptance: { execute: async () => { calls.push("acceptance"); return { passed: true }; } },
-    dv: { close: async () => calls.push("close") },
+    publisher: { close: async () => calls.push("close") },
     workspace: { commitTracked: async () => calls.push("commit") },
     integration: { deliver: async () => calls.push("integration") },
   });
@@ -1086,7 +1075,7 @@ test("requires a stale-refresh review context to be fresh before retrying delive
       },
     },
     acceptance: { execute: async () => { calls.push("acceptance"); return { passed: true }; } },
-    dv: { close: async () => { calls.push("close"); return { schemaVersion: "task-close/v1", id: item.itemId, status: "closed", lifecycle: "closed" }; } },
+    publisher: { close: async () => { calls.push("close"); return { publisherReceipt: "closed" }; } },
     workspace: { commitTracked: async () => { calls.push("commit"); return { committed: true }; } },
     integration: {
       deliver: async () => { calls.push("deliver"); return { status: "stale" }; },
@@ -1113,7 +1102,7 @@ test("fails closed without closing or integrating for non-independent or malform
     review: {
       request: async ({ item }) => item.verdict,
     },
-    dv: {
+    publisher: {
       close: async () => calls.push("dv-close"),
     },
     integration: {

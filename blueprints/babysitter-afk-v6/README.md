@@ -23,9 +23,9 @@ The process accepts only JSON-safe inputs. Provide an importable local `configMo
 
 The composition root is the single owner of effectful ports. It writes and verifies the versioned `babysitter-evidence/v1` manifest in the run directory immediately before each guarded command, state transition, review, closure, integration, and cleanup transition. Its eight required artifact categories are input, command, DV, review, diff, commit, integration, and hash. A missing/unimportable module or malformed ports fails closed before a worktree side effect.
 
-Before it creates an item worktree, the root executes the selected repository's JSON-only `ready`, `show`, and `validate` commands through the injected `docVader.execute({ args, cwd })` port. It requires the requested item to be AFK-ready in both readiness and validation results. The resulting command intent/outcome events are manifest-linked as `dv-ready`, `dv-show`, and `dv-validate`.
+Before it creates an item worktree, the root calls the injected publisher selection capability. The publisher returns the requested identity decision plus non-empty opaque command/result evidence. Babysitter verifies only that transport envelope and identity; it neither executes nor semantically validates publisher ready, show, validate, or close results. The complete opaque selection response is manifest-linked as `publisher-selection`.
 
-A repository may opt into the repository override `.babysitter/repository-override.json`. It is parsed by the existing Doc-Vader contract parser and must be compatible with `doc-vader-contract/v1`. It changes only Doc-Vader command argv; it cannot alter readiness, policy, acceptance, or evidence controls.
+A repository may opt into the repository override `.babysitter/repository-override.json`. It is parsed as a Babysitter command-argv compatibility declaration and must be compatible with `doc-vader-contract/v1`. It changes only command argv construction (including JSON transport); it cannot define publisher Work-result schemas or semantics, or alter policy, acceptance, or evidence controls.
 
 ## Adapter seam and Node-first limits
 

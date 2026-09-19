@@ -1,12 +1,10 @@
-import { parseCloseResult } from "./doc-vader-contract.mjs";
-
 /**
  * Coordinates independent review outcomes for an implementation work item.
  */
 export function createReviewRemediationCoordinator({
   review,
   acceptance,
-  dv,
+  publisher,
   workspace,
   integration,
   policy,
@@ -25,7 +23,7 @@ export function createReviewRemediationCoordinator({
     async review({ item, implementer, guards, maxReviewCycles: requestedCycles } = {}) {
       const cycles = requestedCycles === undefined ? remediationCycles : validReviewCycles(requestedCycles);
       if (cycles === null) return { status: "paused" };
-      const ports = guardedCoordinatorPorts({ guards, review, acceptance, dv, workspace, integration, implementer });
+      const ports = guardedCoordinatorPorts({ guards, review, acceptance, publisher, workspace, integration, implementer });
       if (ports === null) return { status: "paused" };
       if (!await authorizeChangedPaths({ policy, item, globalAllowedPaths, phase: "initial" })) {
         return { status: "paused" };
@@ -102,8 +100,9 @@ export function createReviewRemediationCoordinator({
         if (typeof transactionId !== "string" || transactionId.trim() === "") return { status: "paused" };
 
         try {
-          const acknowledgement = parseCloseResult(await ports.dv.close({ workId: transactionId, cwd: item.worktree }));
-          if (acknowledgement.id !== transactionId) return { status: "paused" };
+          // The publisher owns close-result semantics. A successful injected
+          // port call is the boundary acknowledgement; its result is opaque.
+          await ports.publisher.close({ workId: transactionId, cwd: item.worktree });
           if (!isCommitted(await ports.workspace.commitTracked({ cwd: item.worktree }))) return { status: "paused" };
         } catch (error) {
           return postEffectPaused(error, item);
@@ -186,15 +185,15 @@ async function recoverStaleDelivery({
   }
 }
 
-function guardedCoordinatorPorts({ guards, review, acceptance, dv, workspace, integration, implementer }) {
-  if (guards === undefined) return { review, acceptance, dv, workspace, integration, implementer };
+function guardedCoordinatorPorts({ guards, review, acceptance, publisher, workspace, integration, implementer }) {
+  if (guards === undefined) return { review, acceptance, publisher, workspace, integration, implementer };
   const required = ["reviewRequest", "remediate", "affectedAcceptance", "close", "closureCommit", "integrationDeliver"];
   if (!guards || required.some((name) => typeof guards[name] !== "function")) return null;
-  if (!review || !acceptance || !dv || !workspace || !integration) return null;
+  if (!review || !acceptance || !publisher || !workspace || !integration) return null;
   return {
     review: { request: guards.reviewRequest(review) },
     acceptance: { execute: guards.affectedAcceptance(acceptance) },
-    dv: { close: guards.close(dv) },
+    publisher: { close: guards.close(publisher) },
     workspace: { commitTracked: guards.closureCommit(workspace) },
     integration: {
       deliver: guards.integrationDeliver(integration),
