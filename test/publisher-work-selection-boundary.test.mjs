@@ -48,7 +48,7 @@ test("requires non-empty opaque command and result or artifact transport fields 
   const opaqueResult = { publisherDefined: { nested: "value" } };
   const response = selected({ decisionArtifact: { command: ["arbitrary", 42], result: opaqueResult } });
 
-  assert.strictEqual(decodePublisherWorkSelection(request(), response).decisionArtifact.result, opaqueResult);
+  assert.deepEqual(decodePublisherWorkSelection(request(), response).decisionArtifact.result, opaqueResult);
   for (const decisionArtifact of [
     {},
     { command: [], result: opaqueResult },
@@ -75,5 +75,37 @@ test("fails closed for malformed transport, unsupported capability, and identity
     selected({ outcome: { kind: "not-selected" } }),
   ]) {
     assert.throws(() => decodePublisherWorkSelection(request(), response), /publisher|selection|capability|artifact|identity|outcome/i);
+  }
+});
+
+test("snapshots a selected identity once before validation and delivery", async () => {
+  const { decodePublisherWorkSelection } = await loadBoundary();
+  let reads = 0;
+  const outcome = { kind: "selected" };
+  Object.defineProperty(outcome, "workItemId", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      return reads === 1 ? "wi-001" : "wi-999";
+    },
+  });
+
+  const decoded = decodePublisherWorkSelection(request(), selected({ outcome }));
+  assert.equal(decoded.workItemId, "wi-001");
+  assert.equal(reads, 1);
+});
+
+test("rejects inherited or non-serializable publisher transport before selection", async () => {
+  const { decodePublisherWorkSelection } = await loadBoundary();
+  const inheritedResponse = Object.create(selected());
+  const nonEnumerableArtifact = { command: ["publisher"] };
+  Object.defineProperty(nonEnumerableArtifact, "result", { value: { receipt: true } });
+
+  for (const response of [
+    inheritedResponse,
+    selected({ decisionArtifact: nonEnumerableArtifact }),
+    selected({ decisionArtifact: { command: ["publisher"], result: { bigint: 1n } } }),
+  ]) {
+    assert.throws(() => decodePublisherWorkSelection(request(), response), /publisher|selection|artifact|evidence|identity|outcome/i);
   }
 });

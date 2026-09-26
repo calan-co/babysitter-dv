@@ -9,6 +9,21 @@ function record(value, label) {
   return value;
 }
 
+function jsonSnapshot(value, label) {
+  record(value, label);
+  let serialized;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    invalid(`${label} must be JSON-serializable`);
+  }
+  try {
+    return record(JSON.parse(serialized), label);
+  } catch {
+    invalid(`${label} must be JSON-serializable`);
+  }
+}
+
 function selectionEvidence(value) {
   const evidence = record(value, "publisher decision artifact");
   if (!Array.isArray(evidence.command) || evidence.command.length === 0) {
@@ -35,7 +50,9 @@ export function decodePublisherWorkSelection(request, response) {
   if (typeof requested.workItemId !== "string" || requested.workItemId === "") invalid("request work identity is required");
   if (!Object.hasOwn(requested, "invocationContext")) invalid("request invocation context is required");
 
-  const publisherResponse = record(response, "response");
+  // Snapshot the publisher's untrusted transport once. This excludes inherited
+  // and non-enumerable fields and guarantees returned evidence is journal-safe.
+  const publisherResponse = jsonSnapshot(response, "response");
   if (publisherResponse.capability !== PUBLISHER_WORK_SELECTION_CAPABILITY) invalid("unsupported publisher capability or version");
   const decisionArtifact = selectionEvidence(publisherResponse.decisionArtifact);
   const outcome = record(publisherResponse.outcome, "publisher outcome");
