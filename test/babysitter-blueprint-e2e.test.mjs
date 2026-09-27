@@ -97,7 +97,7 @@ test("Babysitter blueprint fails closed before worktree preparation or state tra
   });
 });
 
-test("journals the decoded publisher snapshot rather than rereading mutable publisher transport", async () => {
+test("fails closed before journaling or delivery for accessor-backed publisher transport", async () => {
   const { createAfkDeliveryBlueprint } = await loadBlueprint();
   await withFixture({}, async (root) => {
     let reads = 0;
@@ -106,7 +106,7 @@ test("journals the decoded publisher snapshot rather than rereading mutable publ
       enumerable: true,
       get() {
         reads += 1;
-        return reads === 1 ? "wi-005" : "wi-999";
+        return "wi-005";
       },
     });
     const response = {
@@ -128,9 +128,9 @@ test("journals the decoded publisher snapshot rather than rereading mutable publ
 
     const result = await blueprint.run({ itemId: "wi-005", cwd: root, runDirectory: root });
     assert.equal(result.status, "paused");
-    assert.equal(reads, 1);
-    assert.equal(journalInput.publisherSelection.response.outcome.workItemId, "wi-005");
-    assert.equal(journalEntries.find((entry) => entry.type === "publisher-selection").response.outcome.workItemId, "wi-005");
+    assert.equal(reads, 0);
+    assert.equal(journalInput, undefined);
+    assert.deepEqual(journalEntries, []);
     assert.deepEqual(harness.prepareCalls, []);
   });
 });

@@ -12,7 +12,7 @@ function record(value, label) {
 function jsonSnapshot(value, label, ancestors = new Set()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) invalid(`${label} must be JSON-serializable`);
+    if (!Number.isFinite(value) || Object.is(value, -0)) invalid(`${label} must be JSON-serializable`);
     return value;
   }
   if (!value || typeof value !== "object") invalid(`${label} must be JSON-serializable`);
@@ -24,18 +24,21 @@ function jsonSnapshot(value, label, ancestors = new Set()) {
       if (keys.length !== value.length + 1 || !keys.includes("length")) invalid(`${label} must be JSON-serializable`);
       const snapshot = [];
       for (let index = 0; index < value.length; index += 1) {
-        if (!Object.hasOwn(value, index)) invalid(`${label} must be JSON-serializable`);
-        snapshot.push(jsonSnapshot(value[index], label, ancestors));
+        const descriptor = Object.getOwnPropertyDescriptor(value, index);
+        if (!descriptor?.enumerable || !("value" in descriptor)) invalid(`${label} must be JSON-serializable`);
+        snapshot.push(jsonSnapshot(descriptor.value, label, ancestors));
       }
       return snapshot;
     }
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) invalid(`${label} must be JSON-serializable`);
     const keys = Reflect.ownKeys(value);
-    if (keys.some((key) => typeof key !== "string" || !Object.getOwnPropertyDescriptor(value, key).enumerable)) {
-      invalid(`${label} must be JSON-serializable`);
-    }
-    return Object.fromEntries(keys.map((key) => [key, jsonSnapshot(value[key], label, ancestors)]));
+    const entries = keys.map((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (typeof key !== "string" || !descriptor?.enumerable || !("value" in descriptor)) invalid(`${label} must be JSON-serializable`);
+      return [key, jsonSnapshot(descriptor.value, label, ancestors)];
+    });
+    return Object.fromEntries(entries);
   } finally {
     ancestors.delete(value);
   }

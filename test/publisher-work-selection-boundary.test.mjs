@@ -78,7 +78,7 @@ test("fails closed for malformed transport, unsupported capability, and identity
   }
 });
 
-test("snapshots a selected identity once before validation and delivery", async () => {
+test("rejects accessor-backed selected identities before validation and delivery", async () => {
   const { decodePublisherWorkSelection } = await loadBoundary();
   let reads = 0;
   const outcome = { kind: "selected" };
@@ -86,13 +86,12 @@ test("snapshots a selected identity once before validation and delivery", async 
     enumerable: true,
     get() {
       reads += 1;
-      return reads === 1 ? "wi-001" : "wi-999";
+      return "wi-001";
     },
   });
 
-  const decoded = decodePublisherWorkSelection(request(), selected({ outcome }));
-  assert.equal(decoded.workItemId, "wi-001");
-  assert.equal(reads, 1);
+  assert.throws(() => decodePublisherWorkSelection(request(), selected({ outcome })), /JSON-serializable|publisher|selection/i);
+  assert.equal(reads, 0);
 });
 
 test("rejects inherited or non-serializable publisher transport before selection", async () => {
@@ -106,6 +105,8 @@ test("rejects inherited or non-serializable publisher transport before selection
     selected({ decisionArtifact: nonEnumerableArtifact }),
     selected({ decisionArtifact: { command: ["publisher"], result: { bigint: 1n } } }),
     selected({ decisionArtifact: { command: ["publisher"], result: { receipt: true, omitted: undefined } } }),
+    selected({ decisionArtifact: { command: ["publisher"], result: { receipt: -0 } } }),
+    selected({ decisionArtifact: { command: (() => { const command = []; Object.defineProperty(command, "0", { value: "publisher", enumerable: false }); return command; })(), result: { receipt: true } } }),
   ]) {
     assert.throws(() => decodePublisherWorkSelection(request(), response), /publisher|selection|artifact|evidence|identity|outcome/i);
   }
