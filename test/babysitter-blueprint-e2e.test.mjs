@@ -354,10 +354,11 @@ test("publisher-owned selection gates every guarded delivery effect and preserve
       assert.equal(result.status, "delivered");
       assert.deepEqual(selectionCalls, [{
         capability: "publisher-work-selection/v1",
-        request: { workItemId: "wi-001", invocationContext: { cwd: root, runDirectory: path.join(root, "evidence"), repositoryOverridePath: undefined, targetBranch: undefined } },
+        request: { workItemId: "wi-001", invocationContext: { cwd: root, runDirectory: path.join(root, "evidence"), repositoryOverridePath: null, targetBranch: null } },
       }]);
       const journal = (await readFile(path.join(root, "evidence", "journal.ndjson"), "utf8")).split("\n").filter(Boolean).map(JSON.parse);
       const selectionEvent = journal.find((event) => event.type === "publisher-selection");
+      assert.deepEqual(selectionEvent.request, selectionCalls[0]);
       assert.deepEqual(selectionEvent.response.decisionArtifact.result, realTaskReadyResult);
     });
   });

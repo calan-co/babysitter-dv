@@ -40,7 +40,7 @@ export function createAfkDeliveryBlueprint({ worktreeTransaction, delivery, publ
       let journal;
       const selectionRequest = Object.freeze({
         capability: PUBLISHER_WORK_SELECTION_CAPABILITY,
-        request: Object.freeze({ workItemId: itemId, invocationContext: Object.freeze({ cwd, runDirectory, repositoryOverridePath, targetBranch }) }),
+        request: Object.freeze({ workItemId: itemId, invocationContext: Object.freeze({ cwd, runDirectory, repositoryOverridePath: repositoryOverridePath ?? null, targetBranch: targetBranch ?? null }) }),
       });
       let selection;
       try {
