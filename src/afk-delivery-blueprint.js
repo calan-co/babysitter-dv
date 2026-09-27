@@ -43,19 +43,17 @@ export function createAfkDeliveryBlueprint({ worktreeTransaction, delivery, publ
         request: Object.freeze({ workItemId: itemId, invocationContext: Object.freeze({ cwd, runDirectory, repositoryOverridePath, targetBranch }) }),
       });
       let selection;
-      let selectionResponse;
       try {
         // A supplied manifest is an evidence contract, never disposable input.
         // Reject it before journal initialization can replace it.
         if (evidenceManifestPath !== undefined) await verifyEvidenceManifest({ runDirectory, manifestPath: evidenceManifestPath });
-        selectionResponse = await publisherSelection.select(selectionRequest);
-        selection = decodePublisherWorkSelection(selectionRequest, selectionResponse);
+        selection = decodePublisherWorkSelection(selectionRequest, await publisherSelection.select(selectionRequest));
       } catch (error) { return paused(error instanceof Error ? error.message : "publisher work selection failed"); }
       try {
-        journal = await journalFactory({ runDirectory, input: { itemId, cwd, targetBranch, publisherSelection: { request: selectionRequest, response: selectionResponse } } });
-        // The response is publisher-owned opaque evidence. Babysitter only
-        // checks the selection transport and never reads its artifact content.
-        await journal.append({ category: "dv", transition: "dv-ready", type: "publisher-selection", request: selectionRequest, response: selectionResponse });
+        journal = await journalFactory({ runDirectory, input: { itemId, cwd, targetBranch, publisherSelection: { request: selectionRequest, response: selection.publisherResponse } } });
+        // The response is publisher-owned opaque evidence. Decode snapshots it
+        // once, so journaled transport cannot diverge from selected identity.
+        await journal.append({ category: "dv", transition: "dv-ready", type: "publisher-selection", request: selectionRequest, response: selection.publisherResponse });
       } catch (error) { return paused(error instanceof Error ? error.message : "journal initialization failed"); }
       if (selection.kind !== "selected") return paused("publisher did not select the requested Work identity");
       const verify = (transition) => verifyEvidenceManifest({ runDirectory: journal.runDirectory ?? runDirectory, manifestPath: evidenceManifestPath ?? path.join(journal.runDirectory ?? runDirectory, "manifest.json"), expectedTransition: transition });

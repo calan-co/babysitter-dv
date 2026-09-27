@@ -9,19 +9,49 @@ function record(value, label) {
   return value;
 }
 
-function jsonSnapshot(value, label) {
-  record(value, label);
-  let serialized;
-  try {
-    serialized = JSON.stringify(value);
-  } catch {
-    invalid(`${label} must be JSON-serializable`);
+function jsonSnapshot(value, label, ancestors = new Set()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) invalid(`${label} must be JSON-serializable`);
+    return value;
   }
+  if (!value || typeof value !== "object") invalid(`${label} must be JSON-serializable`);
+  if (ancestors.has(value)) invalid(`${label} must be JSON-serializable`);
+  ancestors.add(value);
   try {
-    return record(JSON.parse(serialized), label);
-  } catch {
-    invalid(`${label} must be JSON-serializable`);
+    if (Array.isArray(value)) {
+      const keys = Reflect.ownKeys(value);
+      if (keys.length !== value.length + 1 || !keys.includes("length")) invalid(`${label} must be JSON-serializable`);
+      const snapshot = [];
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) invalid(`${label} must be JSON-serializable`);
+        snapshot.push(jsonSnapshot(value[index], label, ancestors));
+      }
+      return snapshot;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) invalid(`${label} must be JSON-serializable`);
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key !== "string" || !Object.getOwnPropertyDescriptor(value, key).enumerable)) {
+      invalid(`${label} must be JSON-serializable`);
+    }
+    return Object.fromEntries(keys.map((key) => [key, jsonSnapshot(value[key], label, ancestors)]));
+  } finally {
+    ancestors.delete(value);
   }
+}
+
+function freezeSnapshot(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeSnapshot(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+function decodedSelection(fields, publisherResponse) {
+  Object.defineProperty(fields, "publisherResponse", { value: freezeSnapshot(publisherResponse) });
+  return Object.freeze(fields);
 }
 
 function selectionEvidence(value) {
@@ -60,20 +90,20 @@ export function decodePublisherWorkSelection(request, response) {
   if (outcome.kind === "selected") {
     if (typeof outcome.workItemId !== "string" || outcome.workItemId === "") invalid("selected work identity is required");
     if (outcome.workItemId !== requested.workItemId) invalid("publisher selected a different work identity");
-    return Object.freeze({
+    return decodedSelection({
       kind: "selected",
       workItemId: outcome.workItemId,
       capability: publisherResponse.capability,
       decisionArtifact,
-    });
+    }, publisherResponse);
   }
   if (outcome.kind === "not-selected" && typeof outcome.code === "string" && outcome.code !== "") {
-    return Object.freeze({
+    return decodedSelection({
       kind: "not-selected",
       code: outcome.code,
       capability: publisherResponse.capability,
       decisionArtifact,
-    });
+    }, publisherResponse);
   }
   invalid("publisher outcome is malformed");
 }

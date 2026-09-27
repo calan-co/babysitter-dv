@@ -97,6 +97,44 @@ test("Babysitter blueprint fails closed before worktree preparation or state tra
   });
 });
 
+test("journals the decoded publisher snapshot rather than rereading mutable publisher transport", async () => {
+  const { createAfkDeliveryBlueprint } = await loadBlueprint();
+  await withFixture({}, async (root) => {
+    let reads = 0;
+    const outcome = { kind: "selected" };
+    Object.defineProperty(outcome, "workItemId", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? "wi-005" : "wi-999";
+      },
+    });
+    const response = {
+      capability: "publisher-work-selection/v1",
+      outcome,
+      decisionArtifact: { command: ["publisher", "select"], result: { opaque: true } },
+    };
+    const journalEntries = [];
+    let journalInput;
+    const harness = createHarness();
+    const blueprint = createAfkDeliveryBlueprint({
+      ...harness.blueprintOptions,
+      publisherSelection: { select: async () => response },
+      journalFactory: async ({ input }) => {
+        journalInput = input;
+        return { runDirectory: root, append: async (entry) => journalEntries.push(entry) };
+      },
+    });
+
+    const result = await blueprint.run({ itemId: "wi-005", cwd: root, runDirectory: root });
+    assert.equal(result.status, "paused");
+    assert.equal(reads, 1);
+    assert.equal(journalInput.publisherSelection.response.outcome.workItemId, "wi-005");
+    assert.equal(journalEntries.find((entry) => entry.type === "publisher-selection").response.outcome.workItemId, "wi-005");
+    assert.deepEqual(harness.prepareCalls, []);
+  });
+});
+
 test("evidence manifest is strict and hash verified", async (t) => {
   const { verifyEvidenceManifest } = await loadEvidence();
   await t.test("accepts an exactly complete manifest", async () => {

@@ -105,6 +105,7 @@ test("rejects inherited or non-serializable publisher transport before selection
     inheritedResponse,
     selected({ decisionArtifact: nonEnumerableArtifact }),
     selected({ decisionArtifact: { command: ["publisher"], result: { bigint: 1n } } }),
+    selected({ decisionArtifact: { command: ["publisher"], result: { receipt: true, omitted: undefined } } }),
   ]) {
     assert.throws(() => decodePublisherWorkSelection(request(), response), /publisher|selection|artifact|evidence|identity|outcome/i);
   }
