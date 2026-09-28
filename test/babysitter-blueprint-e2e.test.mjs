@@ -362,6 +362,28 @@ test("publisher-owned selection gates every guarded delivery effect and preserve
       assert.deepEqual(selectionEvent.response.decisionArtifact.result, realTaskReadyResult);
     });
   });
+  await t.test("rejects non-JSON optional invocation context before publisher selection", async () => {
+    await withFixture(await validEvidenceFiles(), async (root) => {
+      const harness = createHarness();
+      let selections = 0;
+      const blueprint = createAfkDeliveryBlueprint({
+        ...harness.blueprintOptions,
+        publisherSelection: { select: async () => { selections += 1; return validPublisherSelectionPort().select({ request: { workItemId: "wi-005" } }); } },
+      });
+      for (const options of [
+        { targetBranch: Symbol("branch") },
+        { repositoryOverridePath: () => {} },
+      ]) {
+        const result = await blueprint.run({ itemId: "wi-005", cwd: root, runDirectory: path.join(root, "evidence"), ...options });
+        assert.equal(result.status, "paused");
+      }
+      assert.equal(selections, 0);
+      assert.deepEqual(harness.prepareCalls, []);
+      assert.deepEqual(harness.transitionCalls, []);
+      assert.deepEqual(harness.deliveryCalls, []);
+    });
+  });
+
   for (const [name, select] of [
     ["typed non-selection", async () => ({ capability: "publisher-work-selection/v1", outcome: { kind: "not-selected", code: "PUBLISHER_DEFINED" }, decisionArtifact: { command: ["publisher", "select"], result: { diagnostic: "opaque" } } })],
     ["unsupported capability", async () => ({ capability: "publisher-work-selection/v2", outcome: { kind: "selected", workItemId: "wi-005" }, decisionArtifact: { command: ["publisher", "select"], result: { opaque: true } } })],

@@ -37,6 +37,7 @@ export function createAfkDeliveryBlueprint({ worktreeTransaction, delivery, publ
     maxReviewCycles,
     async run({ itemId, cwd, runDirectory, repositoryOverridePath, evidenceManifestPath, targetBranch, implementer } = {}) {
       if (typeof itemId !== "string" || itemId === "" || typeof cwd !== "string" || cwd === "" || typeof runDirectory !== "string" || runDirectory === "") return paused("invalid blueprint run input");
+      if (![repositoryOverridePath, targetBranch].every((value) => value === undefined || value === null || typeof value === "string")) return paused("invalid optional invocation context");
       let journal;
       const selectionRequest = Object.freeze({
         capability: PUBLISHER_WORK_SELECTION_CAPABILITY,
