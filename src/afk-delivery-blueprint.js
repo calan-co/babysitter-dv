@@ -1,7 +1,6 @@
 import path from "node:path";
 import { createEvidenceJournal, verifyEvidenceManifest } from "./evidence-manifest.js";
-import { loadRepositoryOverride } from "./repository-override-loader.js";
-import { parseShowResult, selectReadyWork, validateReadyWork } from "./doc-vader-contract.mjs";
+import { PUBLISHER_WORK_SELECTION_CAPABILITY, decodePublisherWorkSelection } from "./publisher-work-selection.js";
 
 function paused(reason) { return { status: "paused", reason }; }
 function guarded(port, method, transition, verify, journal, category) {
@@ -28,25 +27,36 @@ function guarded(port, method, transition, verify, journal, category) {
  * Stack-neutral composition root. Guarded wrappers make manifest verification
  * mandatory immediately before each coordinator and transaction side effect.
  */
-export function createAfkDeliveryBlueprint({ worktreeTransaction, delivery, docVader, state, journalFactory = createEvidenceJournal, maxReviewCycles = 10 } = {}) {
+export function createAfkDeliveryBlueprint({ worktreeTransaction, delivery, publisherSelection, state, journalFactory = createEvidenceJournal, maxReviewCycles = 10 } = {}) {
   if (!worktreeTransaction || typeof worktreeTransaction.prepareItem !== "function" || typeof worktreeTransaction.withEvidenceGuard !== "function") throw new TypeError("guarded worktree transaction port is required");
   if (!delivery || typeof delivery.review !== "function") throw new TypeError("delivery review port is required");
-  if (!docVader || typeof docVader.execute !== "function") throw new TypeError("Doc-Vader command port is required");
+  if (!publisherSelection || typeof publisherSelection.select !== "function") throw new TypeError("publisher work selection port is required");
   if (!state || typeof state.transition !== "function") throw new TypeError("state transition port is required");
   if (!Number.isInteger(maxReviewCycles) || maxReviewCycles !== 10) throw new TypeError("blueprint maxReviewCycles must be 10");
   return Object.freeze({
     maxReviewCycles,
     async run({ itemId, cwd, runDirectory, repositoryOverridePath, evidenceManifestPath, targetBranch, implementer } = {}) {
       if (typeof itemId !== "string" || itemId === "" || typeof cwd !== "string" || cwd === "" || typeof runDirectory !== "string" || runDirectory === "") return paused("invalid blueprint run input");
+      if (![repositoryOverridePath, targetBranch].every((value) => value === undefined || value === null || typeof value === "string")) return paused("invalid optional invocation context");
       let journal;
-      let override;
+      const selectionRequest = Object.freeze({
+        capability: PUBLISHER_WORK_SELECTION_CAPABILITY,
+        request: Object.freeze({ workItemId: itemId, invocationContext: Object.freeze({ cwd, runDirectory, repositoryOverridePath: repositoryOverridePath ?? null, targetBranch: targetBranch ?? null }) }),
+      });
+      let selection;
       try {
-        override = await loadRepositoryOverride({ repositoryRoot: cwd, repositoryOverridePath });
         // A supplied manifest is an evidence contract, never disposable input.
         // Reject it before journal initialization can replace it.
         if (evidenceManifestPath !== undefined) await verifyEvidenceManifest({ runDirectory, manifestPath: evidenceManifestPath });
-        journal = await journalFactory({ runDirectory, input: { itemId, cwd, targetBranch } });
-      } catch (error) { return paused(error instanceof Error ? error.message : "override or journal initialization failed"); }
+        selection = decodePublisherWorkSelection(selectionRequest, await publisherSelection.select(selectionRequest));
+      } catch (error) { return paused(error instanceof Error ? error.message : "publisher work selection failed"); }
+      try {
+        journal = await journalFactory({ runDirectory, input: { itemId, cwd, targetBranch, publisherSelection: { request: selectionRequest, response: selection.publisherResponse } } });
+        // The response is publisher-owned opaque evidence. Decode snapshots it
+        // once, so journaled transport cannot diverge from selected identity.
+        await journal.append({ category: "dv", transition: "dv-ready", type: "publisher-selection", request: selectionRequest, response: selection.publisherResponse });
+      } catch (error) { return paused(error instanceof Error ? error.message : "journal initialization failed"); }
+      if (selection.kind !== "selected") return paused("publisher did not select the requested Work identity");
       const verify = (transition) => verifyEvidenceManifest({ runDirectory: journal.runDirectory ?? runDirectory, manifestPath: evidenceManifestPath ?? path.join(journal.runDirectory ?? runDirectory, "manifest.json"), expectedTransition: transition });
       try {
         // Bind the transaction's internal CAS/cleanup effect boundary to this
@@ -62,18 +72,11 @@ export function createAfkDeliveryBlueprint({ worktreeTransaction, delivery, docV
         // command and worktree action crosses the same append-verify-effect
         // boundary immediately before it executes.
         const transition = guarded(state, "transition", "state-transition", verify, journal, "command");
-        const runReady = guarded(docVader, "execute", "dv-ready", verify, journal, "dv");
-        const runShow = guarded(docVader, "execute", "dv-show", verify, journal, "dv");
-        const runValidate = guarded(docVader, "execute", "dv-validate", verify, journal, "dv");
         const prepareItem = guarded(worktreeTransaction, "prepareItem", "prepare-item", verify, journal, "command");
         const reviewDelivery = guarded(delivery, "review", "integration-deliver", verify, journal, "integration");
-        const ready = selectReadyWork(await runReady({ args: override.commands.ready(), cwd }), { workId: itemId });
-        const show = parseShowResult(await runShow({ args: override.commands.show(ready.id), cwd }));
-        if (show.id !== ready.id) throw new Error(`Doc-Vader show result is for ${show.id}, expected ${ready.id}`);
-        validateReadyWork(await runValidate({ args: override.commands.validate(ready.id), cwd }), ready.id);
-        await transition({ type: "evidence-journal-created", itemId: ready.id, runDirectory });
-        const item = await prepareItem({ itemId: ready.id, cwd, targetBranch });
-        await transition({ type: "item-worktree-prepared", itemId: ready.id, worktree: item.worktree });
+        await transition({ type: "evidence-journal-created", itemId: selection.workItemId, runDirectory });
+        const item = await prepareItem({ itemId: selection.workItemId, cwd, targetBranch });
+        await transition({ type: "item-worktree-prepared", itemId: selection.workItemId, worktree: item.worktree });
         const outcome = await reviewDelivery({
           item, implementer, maxReviewCycles, verifyEvidence: verify,
           guards: Object.freeze({
