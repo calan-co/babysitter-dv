@@ -4,13 +4,17 @@ title: Adopt publisher-owned Work-result contract boundary
 type: work-item
 subtype: story
 lifecycle: active
-status: ready
+status: completed
+status_reason: completed
 priority: high
+completed_date: '2026-09-29'
 links:
   depends_on:
     - '[[005-babysitter-blueprint-evidence-and-e2e]]'
   reference:
     - '[[../docs/architecture/decisions/adr-001-publisher-owned-work-result-contract]]'
+  evidence:
+    - '[[record-wi-006-publisher-selection-validation-and-independent-review]]'
 tags:
   - babysitter
   - doc-vader
@@ -37,13 +41,13 @@ This work item and ADR-001 explicitly supersede WI-001's historical claims that 
 
 ## Tasks
 
-- [ ] Add a publisher-owned, injected selection port that returns an explicit selected work identity or a fail-closed outcome.
-- [ ] Remove Babysitter-DV's duplicated Work-result schema decoder and readiness semantic validation path.
-- [ ] Ensure missing, ambiguous, unsuccessful, or unselected port outcomes prevent every guarded side effect.
-- [ ] Preserve opaque publisher command/result evidence in the manifest and journal.
-- [ ] Add focused regression coverage using the real `task-ready/v1`/`candidates` fixture and negative fail-closed cases.
-- [ ] Update the blueprint contract documentation and compatibility guidance.
-- [ ] Run focused tests, full repository validation, and an independent review after implementation.
+- [x] Add a publisher-owned, injected selection port that returns an explicit selected work identity or a fail-closed outcome.
+- [x] Remove Babysitter-DV's duplicated Work-result schema decoder and readiness semantic validation path.
+- [x] Ensure missing, ambiguous, unsuccessful, or unselected port outcomes prevent every guarded side effect.
+- [x] Preserve opaque publisher command/result evidence in the manifest and journal.
+- [x] Add focused regression coverage using the real `task-ready/v1`/`candidates` fixture and negative fail-closed cases.
+- [x] Update the blueprint contract documentation and compatibility guidance.
+- [x] Run focused tests, full repository validation, and an independent review after implementation.
 
 ## Deliverables
 
@@ -54,12 +58,12 @@ This work item and ADR-001 explicitly supersede WI-001's historical claims that 
 
 ## Acceptance Criteria
 
-- [ ] A valid publisher result using `task-ready/v1`/`candidates` can select `wi-001` without Babysitter-DV decoding that schema.
-- [ ] Babysitter-DV does not contain a copied Doc-Vader Work-result schema or semantic validator.
-- [ ] No guarded effect occurs without an explicit, publisher/consumer-authorized selected work identity.
-- [ ] Missing, ambiguous, unsuccessful, or unselected outcomes fail closed before a worktree or other delivery side effect.
-- [ ] Command argv compatibility and Work-result authority remain independently documented and tested.
-- [ ] Focused tests, `npm run check`, and independent review pass.
+- [x] A valid publisher result using `task-ready/v1`/`candidates` can select `wi-001` without Babysitter-DV decoding that schema.
+- [x] Babysitter-DV does not contain a copied Doc-Vader Work-result schema or semantic validator.
+- [x] No guarded effect occurs without an explicit, publisher/consumer-authorized selected work identity.
+- [x] Missing, ambiguous, unsuccessful, or unselected outcomes fail closed before a worktree or other delivery side effect.
+- [x] Command argv compatibility and Work-result authority remain independently documented and tested.
+- [x] Focused tests, `npm run check`, and independent review pass.
 
 ## Dependencies
 
