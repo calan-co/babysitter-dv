@@ -12,6 +12,7 @@
     "backlog:validate": "dv backlog validate --dir backlog --fail-on error",
     "test": "node --test test/*.test.mjs",
     "check": "npm run test && npm run backlog:validate",
-    "pilot:rehearse": "node scripts/pilot-rehearsal.mjs"
+    "pilot:rehearse": "node scripts/pilot-rehearsal.mjs",
+    "workspace:init": "node scripts/init-agent-workspace.mjs"
   }
 }

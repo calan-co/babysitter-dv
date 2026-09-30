@@ -1,0 +1,52 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+const root = path.resolve(import.meta.dirname, "..");
+const script = path.join(root, "scripts", "init-agent-workspace.mjs");
+const run = (...args) => execFileSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const runFailure = (...args) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8" });
+
+test("agent workspace initializer previews and writes reusable babysitter-dv policy files", () => {
+  const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
+  try {
+    const preview = JSON.parse(run("--dir", target, "--dry-run", "--json"));
+    assert.equal(preview.status, "planned");
+    assert.deepEqual(preview.files.sort(), [
+      ".pi/skills/babysitter-dv/SKILL.md",
+      "AGENTS.md",
+    ]);
+
+    const written = JSON.parse(run("--dir", target, "--yes", "--json"));
+    assert.equal(written.status, "written");
+    for (const file of preview.files) assert.equal(existsSync(path.join(target, file)), true, file);
+
+    const agents = readFileSync(path.join(target, "AGENTS.md"), "utf8");
+    assert.match(agents, /dv work ready --json/);
+    assert.match(agents, /dedicated git worktree/i);
+    assert.match(agents, /babysitter-dv/i);
+
+    const skill = readFileSync(path.join(target, ".pi/skills/babysitter-dv/SKILL.md"), "utf8");
+    assert.match(skill, /name: babysitter-dv/);
+    assert.match(skill, /fail closed/i);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("agent workspace initializer refuses to overwrite without --force", () => {
+  const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
+  try {
+    writeFileSync(path.join(target, "AGENTS.md"), "keep me\n");
+    const blocked = runFailure("--dir", target, "--yes", "--json");
+    assert.notEqual(blocked.status, 0);
+    assert.match(blocked.stderr, /exists|overwrite|force/i);
+    const forced = JSON.parse(run("--dir", target, "--yes", "--force", "--json"));
+    assert.equal(forced.status, "written");
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});

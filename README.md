@@ -22,3 +22,19 @@ npm run pilot:rehearse
 A publisher-owned selection capability decides whether a requested Work item is selected. Babysitter checks only the capability envelope, requested identity, and non-empty opaque command/result evidence; it does not execute or semantically validate publisher ready, show, validate, or close results. It snapshots accepted publisher transport as JSON before delivery, so inherited, non-enumerable, mutable-accessor, or non-serializable values fail closed rather than producing unreconstructable journal evidence.
 
 Repositories may supply an **optional repository override** for command argv compatibility only when it declares `compatibleWith: ["doc-vader-contract/v1"]`. That declaration constrains argv construction (including JSON transport), not publisher Work-result schemas or semantics. It does not change policy, acceptance, or evidence controls.
+
+## Agent workspace initialization
+
+Initialize a repository once so future Pi sessions see the DV/Babysitter-DV policy automatically:
+
+```sh
+npm run workspace:init -- --dir /path/to/workspace --yes
+```
+
+Preview without writing:
+
+```sh
+npm run workspace:init -- --dir /path/to/workspace --dry-run --json
+```
+
+The initializer writes `AGENTS.md` and `.pi/skills/babysitter-dv/SKILL.md`. It refuses to overwrite existing files unless `--force` is provided.
