@@ -37,4 +37,4 @@ Preview without writing:
 npm run workspace:init -- --dir /path/to/workspace --dry-run --json
 ```
 
-The initializer writes `AGENTS.md` and `.pi/skills/babysitter-dv/SKILL.md`. It refuses to overwrite existing files unless `--force` is provided.
+The initializer appends or updates a managed Babysitter-DV block in `AGENTS.md` and writes `.pi/skills/babysitter-dv/SKILL.md`. It preserves existing `AGENTS.md` content and refuses to overwrite a custom Babysitter-DV skill unless `--force` is provided.

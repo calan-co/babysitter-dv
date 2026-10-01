@@ -37,15 +37,43 @@ test("agent workspace initializer previews and writes reusable babysitter-dv pol
   }
 });
 
-test("agent workspace initializer refuses to overwrite without --force", () => {
+test("agent workspace initializer preserves existing AGENTS.md and appends a managed policy block", () => {
   const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
   try {
-    writeFileSync(path.join(target, "AGENTS.md"), "keep me\n");
+    writeFileSync(path.join(target, "AGENTS.md"), "# Existing policy\n\nKeep this.\n");
+    const written = JSON.parse(run("--dir", target, "--yes", "--json"));
+    assert.equal(written.status, "written");
+
+    const agents = readFileSync(path.join(target, "AGENTS.md"), "utf8");
+    assert.match(agents, /# Existing policy/);
+    assert.match(agents, /Keep this\./);
+    assert.match(agents, /BEGIN babysitter-dv policy/);
+    assert.match(agents, /dv work ready --json/);
+
+    JSON.parse(run("--dir", target, "--yes", "--json"));
+    const rerun = readFileSync(path.join(target, "AGENTS.md"), "utf8");
+    assert.equal((rerun.match(/BEGIN babysitter-dv policy/g) ?? []).length, 1);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("agent workspace initializer refuses to overwrite a custom babysitter-dv skill without --force", () => {
+  const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
+  try {
+    const skill = path.join(target, ".pi/skills/babysitter-dv/SKILL.md");
+    writeFileSync(path.join(target, "AGENTS.md"), "# Existing policy\n\nKeep this.\n");
+    JSON.parse(run("--dir", target, "--yes", "--json"));
+    writeFileSync(skill, "custom skill\n");
     const blocked = runFailure("--dir", target, "--yes", "--json");
     assert.notEqual(blocked.status, 0);
-    assert.match(blocked.stderr, /exists|overwrite|force/i);
+    assert.match(blocked.stderr, /skill|overwrite|force/i);
     const forced = JSON.parse(run("--dir", target, "--yes", "--force", "--json"));
     assert.equal(forced.status, "written");
+    const agents = readFileSync(path.join(target, "AGENTS.md"), "utf8");
+    assert.match(agents, /# Existing policy/);
+    assert.match(agents, /Keep this\./);
+    assert.match(agents, /BEGIN babysitter-dv policy/);
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
