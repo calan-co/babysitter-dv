@@ -25,7 +25,7 @@ Repositories may supply an **optional repository override** for command argv com
 
 ## Agent workspace initialization
 
-Initialize a repository once so future Pi sessions see the DV/Babysitter-DV policy automatically:
+Initialize a repository once so future Babysitter sessions can use the project-local Babysitter-DV process:
 
 ```sh
 npm run workspace:init -- --dir /path/to/workspace --yes
@@ -37,16 +37,24 @@ Preview without writing:
 npm run workspace:init -- --dir /path/to/workspace --dry-run --json
 ```
 
-The initializer appends or updates a managed Babysitter-DV block in `AGENTS.md`, writes `.pi/skills/babysitter-dv/SKILL.md`, and injects the runtime under `.babysitter-dv/` so skill paths resolve inside the target workspace. It preserves existing `AGENTS.md` content and refuses to overwrite custom Babysitter-DV skill/runtime files unless `--force` is provided.
+The initializer installs Babysitter-native project files under `.a5c/`:
+
+- `.a5c/processes/babysitter-dv/process.mjs`
+- `.a5c/processes/babysitter-dv/src/...`
+- `.a5c/processes/babysitter-dv/inputs.example.json`
+- `.a5c/blueprints/babysitter-dv/install.md`
+- `.a5c/blueprints/babysitter-dv/configure.md`
+
+It leaves existing `AGENTS.md` and harness-specific skill files alone, and refuses to overwrite custom Babysitter-DV `.a5c/` files unless `--force` is provided.
 
 After initialization, interact through vanilla Babysitter:
 
 ```text
-/babysitter:call resolve the next ready DV work item with Babysitter-DV
+/babysitter:call resolve the next ready DV work item using .a5c/processes/babysitter-dv/process.mjs
 ```
 
 or from a shell:
 
 ```sh
-genty call --harness <harness> --prompt "resolve the next ready DV work item with Babysitter-DV" --workspace /path/to/workspace
+genty call --harness <harness> --process .a5c/processes/babysitter-dv/process.mjs#process --inputs .a5c/processes/babysitter-dv/inputs.example.json --workspace /path/to/workspace
 ```
