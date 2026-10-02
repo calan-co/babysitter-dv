@@ -4,6 +4,15 @@ This blueprint installs a project-local Babysitter-DV process that can drain rea
 
 ## Dependencies
 
+Reference install docs:
+
+- [Node.js / npm](https://nodejs.org/en/download)
+- [Babysitter](https://github.com/a5c-ai/babysitter/tree/main/packages/babysitter#readme)
+- [Genty](https://github.com/a5c-ai/babysitter/tree/main/packages/genty/cli#readme)
+- [Babysitter Pi plugin](https://github.com/a5c-ai/babysitter-pi#readme)
+- [Pi](https://pi.dev/) / [Pi coding-agent package](https://github.com/earendil-works/pi/tree/main/packages/coding-agent)
+- [pnpm](https://pnpm.io/installation) for local/internal Doc-Vader installs
+
 Install the Babysitter CLI, Genty, and the Pi Babysitter plugin globally:
 
 ```sh
@@ -12,6 +21,8 @@ npm install -g @a5c-ai/babysitter-sdk @a5c-ai/genty @a5c-ai/babysitter-pi
 # pnpm install -g /path/to/doc-vader
 command -v babysitter genty pi dv
 ```
+
+Full Babysitter-DV installation notes: <https://github.com/calan-co/babysitter-dv/blob/main/docs/installation.md>.
 
 Install the Pi plugin into the target workspace:
 
