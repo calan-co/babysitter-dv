@@ -29,8 +29,10 @@ Install the blueprint through Babysitter's marketplace/install packaging when th
 
 ```sh
 babysitter blueprints:add-marketplace --marketplace-url https://github.com/calan-co/babysitter-dv.git --project
-babysitter blueprints:install --plugin-name babysitter-dv --project
+babysitter blueprints:install --plugin-name babysitter-dv --project --json
 ```
+
+`blueprints:install` prints `install.md` and returns a `processFile`; it does not write files by itself. Run the returned `processFile` with `babysitter run:create --entry "$PROCESS_FILE#process" --inputs <json>` and then `babysitter run:iterate <runDir>` to apply the install.
 
 For local development, the compatibility wrapper invokes the same blueprint `install-process.js` directly:
 

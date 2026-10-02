@@ -53,6 +53,10 @@ test("workspace initializer writes a Babysitter-native backlog-drain process", a
     for (const file of preview.files) assert.equal(existsSync(path.join(target, file)), true, file);
 
     const install = readFileSync(path.join(target, ".a5c/blueprints/babysitter-dv/install.md"), "utf8");
+    assert.match(install, /blueprints:install` prints these instructions/i);
+    assert.match(install, /processFile/);
+    assert.match(install, /run:create/);
+    assert.match(install, /run:iterate/);
     assert.match(install, /\/babysitter:call/);
     assert.match(install, /genty call/);
     assert.match(install, /--process \.a5c\/processes\/babysitter-dv\.js#process/);
