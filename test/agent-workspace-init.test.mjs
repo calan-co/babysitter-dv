@@ -97,7 +97,7 @@ test("generated backlog-drain process pauses on the first gated candidate", asyn
 if [ "$1 $2" = "work ready" ]; then
   printf '%s\n' '{"schemaVersion":"task-ready/v1","candidates":[{"id":"wi-1"}]}'
 else
-  printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"command":["dv"],"result":{"ok":true}},"outcome":{"kind":"not-selected","code":"test-gate"}}'
+  printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"invokedCommand":"dv work select wi-1 --request - --json","requestedWorkItemId":"wi-1","sourceResult":"opaque"},"outcome":{"kind":"not-selected","code":"test-gate"}}'
 fi
 `);
     chmodSync(dv, 0o755);
@@ -109,6 +109,7 @@ fi
     assert.equal(outcome, halted);
     assert.equal(outcome.reason, "babysitter-dv-paused");
     assert.equal(outcome.payload.itemId, "wi-1");
+    assert.equal(outcome.payload.outcome.reason, "publisher did not select the requested Work identity");
     assert.equal(outcome.payload.completed.length, 1);
   } finally {
     process.env.PATH = oldPath;
@@ -135,7 +136,7 @@ test("generated default adapter creates a worktree and delegates selected work t
 if [ "$1 $2" = "work ready" ]; then
   printf '%s\n' '{"schemaVersion":"task-ready/v1","candidates":[{"id":"wi-1"}]}'
 else
-  printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"command":["dv"],"result":{"ok":true}},"outcome":{"kind":"selected","workItemId":"wi-1"}}'
+  printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"command":["dv","work","select"],"result":{"ok":true}},"outcome":{"kind":"selected","workItemId":"wi-1"}}'
 fi
 `);
     chmodSync(dv, 0o755);

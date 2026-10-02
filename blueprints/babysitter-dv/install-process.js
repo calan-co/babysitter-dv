@@ -43,12 +43,18 @@ function createDefaultPorts({ ctx, workspace }) {
     publisherSelection: {
       async select(request) {
         const workItemId = request?.request?.workItemId;
-        const stdout = execFileSync("dv", ["work", "select", workItemId, "--request", "-", "--json"], {
+        const command = ["dv", "work", "select", workItemId, "--request", "-", "--json"];
+        const stdout = execFileSync(command[0], command.slice(1), {
           cwd: workspace,
           input: JSON.stringify(request),
           encoding: "utf8",
         });
-        return JSON.parse(stdout);
+        const response = JSON.parse(stdout);
+        const artifact = response?.decisionArtifact;
+        if (artifact && !Array.isArray(artifact.command)) {
+          return { ...response, decisionArtifact: { command, result: artifact } };
+        }
+        return response;
       },
     },
     journalFactory: createEvidenceJournal,
