@@ -25,7 +25,14 @@ Repositories may supply an **optional repository override** for command argv com
 
 ## Agent workspace initialization
 
-Initialize a repository once so future Babysitter sessions can use the project-local Babysitter-DV process:
+Install the blueprint through Babysitter's marketplace/install packaging when this repository is registered as a marketplace:
+
+```sh
+babysitter blueprints:add-marketplace --marketplace-url https://github.com/calan-co/babysitter-dv.git --project
+babysitter blueprints:install --plugin-name babysitter-dv --project
+```
+
+For local development, the compatibility wrapper invokes the same blueprint `install-process.js` directly:
 
 ```sh
 npm run workspace:init -- --dir /path/to/workspace --yes

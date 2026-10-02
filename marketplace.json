@@ -1,0 +1,17 @@
+{
+  "name": "babysitter-dv",
+  "description": "Babysitter-DV blueprint marketplace",
+  "url": "https://github.com/calan-co/babysitter-dv.git",
+  "owner": "calan-co",
+  "plugins": {
+    "babysitter-dv": {
+      "name": "babysitter-dv",
+      "description": "Install a project-local Babysitter-DV process that drains ready Doc-Vader work through vanilla Babysitter.",
+      "latestVersion": "0.1.0",
+      "versions": ["0.1.0"],
+      "packagePath": "blueprints/babysitter-dv",
+      "tags": ["babysitter", "doc-vader", "dv", "backlog", "afk"],
+      "author": "calan-co"
+    }
+  }
+}

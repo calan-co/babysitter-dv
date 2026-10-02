@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,30 @@ const root = path.resolve(import.meta.dirname, "..");
 const script = path.join(root, "scripts", "init-agent-workspace.mjs");
 const run = (...args) => execFileSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const runFailure = (...args) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8" });
+
+test("repository exposes self-contained Babysitter blueprint install packaging", async () => {
+  const marketplace = JSON.parse(readFileSync(path.join(root, "marketplace.json"), "utf8"));
+  assert.equal(marketplace.plugins["babysitter-dv"].packagePath, "blueprints/babysitter-dv");
+  assert.equal(existsSync(path.join(root, "blueprints/babysitter-dv/install.md")), true);
+  assert.equal(existsSync(path.join(root, "blueprints/babysitter-dv/configure.md")), true);
+  const installProcess = await import(pathToFileURL(path.join(root, "blueprints/babysitter-dv/install-process.js")));
+  assert.equal(typeof installProcess.process, "function");
+  const preview = await installProcess.process({ dir: root, dryRun: true });
+  assert.equal(preview.status, "planned");
+  assert.ok(preview.files.includes(".a5c/processes/babysitter-dv.js"));
+
+  const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-package-"));
+  try {
+    const packageCopy = path.join(target, "blueprint");
+    cpSync(path.join(root, "blueprints/babysitter-dv"), packageCopy, { recursive: true });
+    const copiedInstallProcess = await import(pathToFileURL(path.join(packageCopy, "install-process.js")));
+    const installed = await copiedInstallProcess.process({ dir: target, yes: true });
+    assert.equal(installed.status, "written");
+    assert.equal(existsSync(path.join(target, ".a5c/processes/babysitter-dv/src/afk-delivery-blueprint.js")), true);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+});
 
 test("workspace initializer writes a Babysitter-native backlog-drain process", async () => {
   const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
