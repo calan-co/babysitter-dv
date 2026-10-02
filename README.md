@@ -37,4 +37,16 @@ Preview without writing:
 npm run workspace:init -- --dir /path/to/workspace --dry-run --json
 ```
 
-The initializer appends or updates a managed Babysitter-DV block in `AGENTS.md` and writes `.pi/skills/babysitter-dv/SKILL.md`. It preserves existing `AGENTS.md` content and refuses to overwrite a custom Babysitter-DV skill unless `--force` is provided.
+The initializer appends or updates a managed Babysitter-DV block in `AGENTS.md`, writes `.pi/skills/babysitter-dv/SKILL.md`, and injects the runtime under `.babysitter-dv/` so skill paths resolve inside the target workspace. It preserves existing `AGENTS.md` content and refuses to overwrite custom Babysitter-DV skill/runtime files unless `--force` is provided.
+
+After initialization, interact through vanilla Babysitter:
+
+```text
+/babysitter:call resolve the next ready DV work item with Babysitter-DV
+```
+
+or from a shell:
+
+```sh
+genty call --harness <harness> --prompt "resolve the next ready DV work item with Babysitter-DV" --workspace /path/to/workspace
+```

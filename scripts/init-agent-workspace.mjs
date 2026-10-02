@@ -2,7 +2,9 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_START = "<!-- BEGIN babysitter-dv policy -->";
 const AGENTS_END = "<!-- END babysitter-dv policy -->";
 const AGENTS_POLICY = `${AGENTS_START}
@@ -25,37 +27,53 @@ description: Use when implementing or validating Doc-Vader work items with the B
 
 # Babysitter-DV
 
-Use this workflow for implementation work in an initialized workspace.
+Use vanilla Babysitter after workspace initialization. The target-local runtime lives at \`.babysitter-dv/blueprints/babysitter-afk-v6/process.mjs\`; do not point at the original \`babysitter-dv\` source checkout.
+
+Start runs the normal Babysitter way:
+
+\`\`\`text
+/babysitter:call resolve the next ready DV work item with Babysitter-DV
+\`\`\`
+
+or, from a shell:
+
+\`\`\`sh
+genty call --harness <harness> --prompt "resolve the next ready DV work item with Babysitter-DV" --workspace .
+\`\`\`
+
+Workflow policy for the Babysitter run:
 
 1. Inspect work:
    - \`dv work ready --json\`
    - \`dv work status <work-id> --json\` when diagnosing a specific item.
 2. Use one dedicated git worktree per work item. Do not edit the base checkout for item implementation.
-3. Run the Babysitter-DV blueprint for selected AFK-ready work. The v6 process lives at \`blueprints/babysitter-afk-v6/process.mjs\`.
+3. For selected AFK-ready work, use the injected Babysitter-DV runtime at \`.babysitter-dv/blueprints/babysitter-afk-v6/process.mjs\`.
 4. Fail closed. Do not bypass publisher-owned selection, evidence manifest verification, independent review, closure, integration, or cleanup gates.
 5. If Babysitter-DV pauses or rejects a boundary, report the blocker and preserve recovery artifacts.
 6. Validate before completion:
    - focused test for the changed behavior
    - \`npm run check\`
    - \`npm run pilot:rehearse\` for release/MVP readiness from a clean checkout
-
-Minimal command reminder:
-
-\`\`\`sh
-cd blueprints/babysitter-afk-v6
-npm ci
-babysitter run:create --process-id babysitter-afk-doc-vader --entry "$PWD/process.mjs#process" --inputs ./inputs.json --non-interactive --json
-\`\`\`
-
-Then continue with:
-
-\`\`\`sh
-babysitter run:iterate <run-directory> --json
-babysitter run:events <run-directory> --json
-\`\`\`
 `;
 
-const plannedFiles = ["AGENTS.md", ".pi/skills/babysitter-dv/SKILL.md"];
+const RUNTIME_PACKAGE = `${JSON.stringify({ type: "module" }, null, 2)}\n`;
+
+const RUNTIME_FILES = [
+  "blueprints/babysitter-afk-v6/package-lock.json",
+  "blueprints/babysitter-afk-v6/package.json",
+  "blueprints/babysitter-afk-v6/process.mjs",
+  "blueprints/babysitter-afk-v6/README.md",
+  "src/afk-delivery-blueprint.js",
+  "src/doc-vader-contract.mjs",
+  "src/evidence-manifest.js",
+  "src/git-worktree-transaction.js",
+  "src/node-acceptance-discovery.js",
+  "src/publisher-work-selection.js",
+  "src/repository-override-loader.js",
+  "src/review-remediation-coordinator.js",
+];
+const runtimeTarget = (name) => `.babysitter-dv/${name}`;
+const plannedFiles = ["AGENTS.md", ".pi/skills/babysitter-dv/SKILL.md", ".babysitter-dv/package.json", ...RUNTIME_FILES.map(runtimeTarget)];
 
 function parse(argv) {
   const options = { dir: process.cwd(), json: false, dryRun: false, yes: false, force: false };
@@ -96,6 +114,28 @@ async function writeSkill(file, force) {
   await writeFile(file, SKILL);
 }
 
+async function writeRuntimePackage(targetRoot, force) {
+  const target = path.join(targetRoot, ".babysitter-dv/package.json");
+  if (existsSync(target)) {
+    const current = await readFile(target, "utf8");
+    if (current !== RUNTIME_PACKAGE && !force) throw new Error("refusing to overwrite existing Babysitter-DV runtime file without --force: .babysitter-dv/package.json");
+  }
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, RUNTIME_PACKAGE);
+}
+
+async function copyRuntimeFile(targetRoot, name, force) {
+  const source = path.join(sourceRoot, name);
+  const target = path.join(targetRoot, runtimeTarget(name));
+  const contents = await readFile(source);
+  if (existsSync(target)) {
+    const current = await readFile(target);
+    if (!current.equals(contents) && !force) throw new Error(`refusing to overwrite existing Babysitter-DV runtime file without --force: ${runtimeTarget(name)}`);
+  }
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, contents);
+}
+
 try {
   const options = parse(process.argv.slice(2));
   const target = path.resolve(options.dir);
@@ -109,6 +149,8 @@ try {
   await mkdir(path.dirname(agents), { recursive: true });
   await writeFile(agents, await agentsContents(agents));
   await writeSkill(path.join(target, ".pi/skills/babysitter-dv/SKILL.md"), options.force);
+  await writeRuntimePackage(target, options.force);
+  for (const name of RUNTIME_FILES) await copyRuntimeFile(target, name, options.force);
   print({ status: "written", dir: target, files: plannedFiles }, options.json);
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
