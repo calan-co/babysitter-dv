@@ -47,14 +47,14 @@ The initializer installs Babysitter-native project files under `.a5c/`:
 
 It leaves existing `AGENTS.md` and harness-specific skill files alone, and refuses to overwrite custom Babysitter-DV `.a5c/` files unless `--force` is provided.
 
-After initialization, interact through vanilla Babysitter:
+After initialization, interact through vanilla Babysitter. With repository-specific ports configured, one call can drain ready DV backlog work until no unblocked candidates remain or a gate pauses:
 
 ```text
-/babysitter:call resolve the next ready DV work item using .a5c/processes/babysitter-dv/process.mjs
+/babysitter:call systematically work through the ready DV backlog using the project Babysitter-DV process
 ```
 
 or from a shell:
 
 ```sh
-genty call --harness <harness> --process .a5c/processes/babysitter-dv/process.mjs#process --inputs .a5c/processes/babysitter-dv/inputs.example.json --workspace /path/to/workspace
+genty call --harness <harness> --process .a5c/processes/babysitter-dv.js#process --workspace /path/to/workspace
 ```
