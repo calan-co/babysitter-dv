@@ -22,9 +22,16 @@ npm install -g @a5c-ai/babysitter-sdk @a5c-ai/genty @a5c-ai/babysitter-pi
 command -v babysitter genty pi dv
 ```
 
-Full Babysitter-DV installation notes: <https://github.com/calan-co/babysitter-dv/blob/main/docs/installation.md>.
+Full Babysitter-DV installation notes, including the one-command script method and manual method: <https://github.com/calan-co/babysitter-dv/blob/main/docs/installation.md>.
 
-Install the Pi plugin into the target workspace:
+Script method from a workspace:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts/install-babysitter-dv.sh \
+  | sh -s -- --workspace "$PWD"
+```
+
+Manual Pi plugin step:
 
 ```sh
 babysitter harness:install-plugin pi --workspace "$PWD" --json

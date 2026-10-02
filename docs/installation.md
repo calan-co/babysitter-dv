@@ -9,7 +9,41 @@ Babysitter-DV installs as a Babysitter blueprint into a target workspace. The de
 - `dv` — Doc-Vader CLI (`@calan-co/doc-vader`); install from your internal Doc-Vader source or distribution
 - optional `pnpm` for local/internal Doc-Vader installs — [pnpm installation](https://pnpm.io/installation)
 
-## 1. Install global tools
+## Script method
+
+For the normal path, run the installer script directly from GitHub in the target workspace:
+
+```sh
+cd /path/to/workspace
+curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts/install-babysitter-dv.sh \
+  | sh -s -- --workspace "$PWD"
+```
+
+If `dv` is not already installed but you have Doc-Vader source locally:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts/install-babysitter-dv.sh \
+  | sh -s -- --workspace /path/to/workspace --doc-vader-source /path/to/doc-vader
+```
+
+Useful options:
+
+```text
+--workspace DIR          target workspace; default is current directory
+--doc-vader-source DIR   install Doc-Vader `dv` from local source/package first
+--skip-global-tools      skip npm global install for Babysitter/Genty/Pi plugin packages
+--skip-pi-plugin         skip workspace Pi Babysitter plugin install
+--no-force               do not force-refresh generated Babysitter-DV files
+--help                   show script usage
+```
+
+The script performs the manual steps below: installs global npm packages, optionally installs Doc-Vader, installs the workspace Pi plugin, adds or updates the Babysitter-DV marketplace, runs the blueprint install process, removes the old generated `ports.mjs` stub if present, and verifies the result.
+
+## Manual method
+
+Use this if you prefer to run each step explicitly or need to debug an install.
+
+### 1. Install global tools
 
 ```sh
 npm install -g @a5c-ai/babysitter-sdk @a5c-ai/genty @a5c-ai/babysitter-pi
@@ -22,7 +56,7 @@ command -v babysitter genty pi dv
 
 If `pi` is missing, install it using the Pi docs linked above.
 
-## 2. Install the Pi Babysitter plugin into a workspace
+### 2. Install the Pi Babysitter plugin into a workspace
 
 ```sh
 cd /path/to/workspace
@@ -35,7 +69,7 @@ This writes the Pi plugin under:
 .a5c/plugins/babysitter/
 ```
 
-## 3. Install or update Babysitter-DV in the workspace
+### 3. Install or update Babysitter-DV in the workspace
 
 Fresh workspace:
 
@@ -83,7 +117,7 @@ babysitter run:iterate "$RUN_DIR" --json
 
 `force:true` refreshes stale generated process files. No `ports.mjs` is required; delete an old generated stub if one remains.
 
-## 4. Verify
+### 4. Verify
 
 ```sh
 test -f .a5c/processes/babysitter-dv.js
@@ -97,7 +131,7 @@ dv work ready --json
 babysitter session:whoami --harness pi --json
 ```
 
-## 5. Run with Pi
+### 5. Run with Pi
 
 From a Pi session in the workspace:
 

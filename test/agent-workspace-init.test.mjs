@@ -16,6 +16,17 @@ test("repository exposes self-contained Babysitter blueprint install packaging",
   assert.equal(marketplace.plugins["babysitter-dv"].packagePath, "blueprints/babysitter-dv");
   assert.equal(existsSync(path.join(root, "blueprints/babysitter-dv/install.md")), true);
   assert.equal(existsSync(path.join(root, "blueprints/babysitter-dv/configure.md")), true);
+  assert.equal(existsSync(path.join(root, "docs/installation.md")), true);
+  const installer = path.join(root, "scripts/install-babysitter-dv.sh");
+  assert.equal(existsSync(installer), true);
+  execFileSync("sh", ["-n", installer]);
+  const installerHelp = execFileSync("sh", [installer, "--help"], { encoding: "utf8" });
+  assert.match(installerHelp, /--workspace DIR/);
+  assert.match(installerHelp, /--doc-vader-source DIR/);
+  const installation = readFileSync(path.join(root, "docs/installation.md"), "utf8");
+  assert.match(installation, /## Script method/);
+  assert.match(installation, /raw\.githubusercontent\.com\/calan-co\/babysitter-dv/);
+  assert.match(installation, /## Manual method/);
   const installProcess = await import(pathToFileURL(path.join(root, "blueprints/babysitter-dv/install-process.js")));
   assert.equal(typeof installProcess.process, "function");
   const preview = await installProcess.process({ dir: root, dryRun: true });
