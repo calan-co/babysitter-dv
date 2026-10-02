@@ -31,7 +31,9 @@ Define the Babysitter-DV boundaries and workflow for PR creation, CI/code-review
 - How are required CI checks and code-review requirements discovered: repository config, provider branch protection, explicit install config, or Doc-Vader policy?
 - What happens on draft PR, failed CI, requested changes, stale target branch, merge conflict, closed PR, or already-merged branch?
 - When is it safe to close the DV work item: before merge, after PR approval, after merge, or after archival evidence?
-- What archival means: keep worktree/branch/PR artifacts, remove local worktrees, delete branches, write DV record, or all of these?
+- What archival means: keep worktree/branch/PR artifacts, remove local worktrees, delete local/remote branches, write DV record, or all of these?
+- How does the default blueprint mechanically invoke deterministic cleanup after successful merge instead of relying on prompt-only cleanup?
+- What recovery evidence is required when local worktree removal, local branch deletion, or remote branch deletion fails after merge?
 
 ## Proposed Investigation
 
@@ -40,6 +42,8 @@ Define the Babysitter-DV boundaries and workflow for PR creation, CI/code-review
 - [ ] Decide which checks are hard gates versus advisory evidence.
 - [ ] Specify fail-closed recovery states for failed CI, requested changes, stale target, conflicts, merge failures, and post-effect evidence recording failures.
 - [ ] Define how the default adapter should behave without GitHub/PR credentials.
+- [ ] Specify cleanup ownership for item worktrees, integration worktrees, local branches, and remote PR branches.
+- [ ] Decide whether existing `createGitWorktreeTransaction` cleanup primitives are sufficient or need provider cleanup ports for remote branches/PR archival.
 - [ ] Produce implementation work items for the selected workflow.
 
 ## Acceptance Criteria
@@ -47,7 +51,8 @@ Define the Babysitter-DV boundaries and workflow for PR creation, CI/code-review
 - [ ] A short design note or ADR documents the selected ownership boundaries and state machine.
 - [ ] The design includes evidence artifacts required for each irreversible side effect.
 - [ ] The design defines default behavior for GitHub-backed repositories and a provider-port seam for non-GitHub repositories.
-- [ ] The design explicitly covers CI status polling, code review approval, merge, DV closure, and local/remote archival cleanup.
+- [ ] The design explicitly covers CI status polling, code review approval, merge, DV closure, local worktree cleanup, local branch cleanup, remote branch cleanup, and PR/archive evidence.
+- [ ] Cleanup is represented as a required post-merge gate with fail-closed recovery states for partial cleanup.
 - [ ] Follow-up work items are created for implementation and tests.
 
 ## Non-Goals
