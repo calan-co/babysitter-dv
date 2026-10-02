@@ -32,7 +32,7 @@ For local development in the Babysitter-DV repository, the compatibility wrapper
 npm run workspace:init -- --dir /path/to/workspace --yes
 ```
 
-After install and repository-specific port configuration, run:
+After install, run:
 
 ```text
 /babysitter:call systematically work through the ready DV backlog using the project Babysitter-DV process

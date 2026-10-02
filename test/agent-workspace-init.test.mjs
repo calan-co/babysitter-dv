@@ -44,7 +44,7 @@ test("workspace initializer writes a Babysitter-native backlog-drain process", a
     assert.ok(preview.files.includes(".a5c/processes/babysitter-dv.js"));
     assert.ok(preview.files.includes(".a5c/processes/package.json"));
     assert.ok(preview.files.includes(".a5c/processes/babysitter-dv/process.mjs"));
-    assert.ok(preview.files.includes(".a5c/processes/babysitter-dv/ports.example.mjs"));
+    assert.ok(!preview.files.includes(".a5c/processes/babysitter-dv/ports.example.mjs"));
     assert.ok(preview.files.includes(".a5c/blueprints/babysitter-dv/install.md"));
     assert.ok(!preview.files.some((file) => file.startsWith(".pi/") || file === "AGENTS.md"));
 
@@ -93,23 +93,14 @@ test("generated backlog-drain process pauses on the first gated candidate", asyn
     const bin = path.join(target, "bin");
     mkdirSync(bin);
     const dv = path.join(bin, "dv");
-    writeFileSync(dv, "#!/bin/sh\nprintf '%s\\n' '{\"schemaVersion\":\"task-ready/v1\",\"candidates\":[{\"id\":\"wi-1\"}]}'\n");
-    chmodSync(dv, 0o755);
-    writeFileSync(path.join(target, ".a5c/processes/babysitter-dv/ports.mjs"), `
-export function createPorts() {
-  return {
-    worktreeTransaction: { prepareItem() {}, withEvidenceGuard() {} },
-    delivery: { review() {} },
-    state: { transition() {} },
-    journalFactory: async () => ({ runDirectory: "ignored", append: async () => {} }),
-    publisherSelection: { select: async () => ({
-      capability: "publisher-work-selection/v1",
-      decisionArtifact: { command: ["dv"], result: { ok: true } },
-      outcome: { kind: "not-selected", code: "test-gate" }
-    }) }
-  };
-}
+    writeFileSync(dv, `#!/bin/sh
+if [ "$1 $2" = "work ready" ]; then
+  printf '%s\n' '{"schemaVersion":"task-ready/v1","candidates":[{"id":"wi-1"}]}'
+else
+  printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"command":["dv"],"result":{"ok":true}},"outcome":{"kind":"not-selected","code":"test-gate"}}'
+fi
 `);
+    chmodSync(dv, 0o755);
     process.env.PATH = `${bin}${path.delimiter}${oldPath}`;
     const mod = await import(pathToFileURL(path.join(target, ".a5c/processes/babysitter-dv/process.mjs")));
     let halted;
@@ -119,6 +110,48 @@ export function createPorts() {
     assert.equal(outcome.reason, "babysitter-dv-paused");
     assert.equal(outcome.payload.itemId, "wi-1");
     assert.equal(outcome.payload.completed.length, 1);
+  } finally {
+    process.env.PATH = oldPath;
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("generated default adapter creates a worktree and delegates selected work to Babysitter task", async () => {
+  const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
+  const oldPath = process.env.PATH;
+  try {
+    JSON.parse(run("--dir", target, "--yes", "--json"));
+    execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.invalid"], { cwd: target });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: target });
+    writeFileSync(path.join(target, "README.md"), "test\n");
+    execFileSync("git", ["add", "README.md"], { cwd: target });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: target, stdio: "ignore" });
+
+    const bin = path.join(target, "bin");
+    mkdirSync(bin);
+    const dv = path.join(bin, "dv");
+    writeFileSync(dv, `#!/bin/sh
+if [ "$1 $2" = "work ready" ]; then
+  printf '%s\n' '{"schemaVersion":"task-ready/v1","candidates":[{"id":"wi-1"}]}'
+else
+  printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"command":["dv"],"result":{"ok":true}},"outcome":{"kind":"selected","workItemId":"wi-1"}}'
+fi
+`);
+    chmodSync(dv, 0o755);
+    process.env.PATH = `${bin}${path.delimiter}${oldPath}`;
+    const mod = await import(pathToFileURL(path.join(target, ".a5c/processes/babysitter-dv/process.mjs")));
+    const taskCalls = [];
+    const ctx = {
+      task: async (_task, args) => { taskCalls.push(args); return { status: "paused", reason: "test" }; },
+      halt: (reason, payload) => ({ reason, payload }),
+    };
+    const outcome = await mod.process({ workspace: target }, ctx);
+    assert.equal(outcome.reason, "babysitter-dv-paused");
+    assert.equal(taskCalls.length, 1);
+    assert.equal(taskCalls[0].itemId, "wi-1");
+    assert.match(taskCalls[0].worktree, /\.a5c\/worktrees\/wi-1$/);
+    assert.equal(existsSync(taskCalls[0].worktree), true);
   } finally {
     process.env.PATH = oldPath;
     rmSync(target, { recursive: true, force: true });
