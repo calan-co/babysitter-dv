@@ -31,6 +31,14 @@ curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts
   | sh -s -- --workspace "$PWD"
 ```
 
+Use a local Babysitter Pi plugin checkout instead of the published package:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts/install-babysitter-dv.sh \
+  | sh -s -- --workspace ~/dev/personal/chris-cald/dewey \
+    --babysitter-pi-source ~/dev/upstream/a5c-ai/babysitter-pi
+```
+
 Manual Pi plugin step:
 
 ```sh

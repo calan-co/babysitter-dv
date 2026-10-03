@@ -22,10 +22,16 @@ test("repository exposes self-contained Babysitter blueprint install packaging",
   execFileSync("sh", ["-n", installer]);
   const installerHelp = execFileSync("sh", [installer, "--help"], { encoding: "utf8" });
   assert.match(installerHelp, /--workspace DIR/);
-  assert.match(installerHelp, /--doc-vader-source DIR/);
+  assert.match(installerHelp, /--babysitter-source SPEC/);
+  assert.match(installerHelp, /--genty-source SPEC/);
+  assert.match(installerHelp, /--babysitter-pi-source SPEC/);
+  assert.match(installerHelp, /--pi-source SPEC/);
+  assert.match(installerHelp, /--doc-vader-source SPEC/);
+  assert.match(installerHelp, /~\/dev\/upstream\/a5c-ai\/babysitter-pi/);
   const installation = readFileSync(path.join(root, "docs/installation.md"), "utf8");
   assert.match(installation, /## Script method/);
   assert.match(installation, /raw\.githubusercontent\.com\/calan-co\/babysitter-dv/);
+  assert.match(installation, /--babysitter-pi-source ~\/dev\/upstream\/a5c-ai\/babysitter-pi/);
   assert.match(installation, /## Manual method/);
   const installProcess = await import(pathToFileURL(path.join(root, "blueprints/babysitter-dv/install-process.js")));
   assert.equal(typeof installProcess.process, "function");

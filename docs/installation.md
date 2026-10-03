@@ -26,18 +26,30 @@ curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts
   | sh -s -- --workspace /path/to/workspace --doc-vader-source /path/to/doc-vader
 ```
 
+If you want the workspace Pi plugin from a local checkout instead of the published package:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/calan-co/babysitter-dv/main/scripts/install-babysitter-dv.sh \
+  | sh -s -- --workspace ~/dev/personal/chris-cald/dewey \
+    --babysitter-pi-source ~/dev/upstream/a5c-ai/babysitter-pi
+```
+
 Useful options:
 
 ```text
---workspace DIR          target workspace; default is current directory
---doc-vader-source DIR   install Doc-Vader `dv` from local source/package first
---skip-global-tools      skip npm global install for Babysitter/Genty/Pi plugin packages
---skip-pi-plugin         skip workspace Pi Babysitter plugin install
---no-force               do not force-refresh generated Babysitter-DV files
---help                   show script usage
+--workspace DIR              target workspace; default is current directory
+--babysitter-source SPEC     npm package spec for Babysitter CLI; default @a5c-ai/babysitter-sdk
+--genty-source SPEC          npm package spec for Genty CLI; default @a5c-ai/genty
+--babysitter-pi-source SPEC  npm package spec/path for the Pi Babysitter plugin; default @a5c-ai/babysitter-pi
+--pi-source SPEC             optional npm package spec/path for the pi CLI
+--doc-vader-source SPEC      npm/pnpm package spec/path for Doc-Vader `dv`
+--skip-global-tools          skip npm global install for Babysitter/Genty/Pi plugin packages
+--skip-pi-plugin             skip workspace Pi Babysitter plugin install
+--no-force                   do not force-refresh generated Babysitter-DV files
+--help                       show script usage
 ```
 
-The script performs the manual steps below: installs global npm packages, optionally installs Doc-Vader, installs the workspace Pi plugin, adds or updates the Babysitter-DV marketplace, runs the blueprint install process, removes the old generated `ports.mjs` stub if present, and verifies the result.
+The script performs the manual steps below: installs global npm packages from the configured package specs, optionally installs Doc-Vader and/or Pi from custom sources, installs the workspace Pi plugin, adds or updates the Babysitter-DV marketplace, runs the blueprint install process, removes the old generated `ports.mjs` stub if present, and verifies the result.
 
 ## Manual method
 
