@@ -68,8 +68,27 @@ export async function createEvidenceJournal({ runDirectory, input = {} } = {}) {
   const artifactDirectory = path.join(root, "artifacts");
   await mkdir(artifactDirectory, { recursive: true });
   const journalPath = path.join(root, "journal.ndjson");
-  const artifacts = [];
+  let artifacts = [];
   let sequence = 0;
+  let journalExists = true;
+  try { await lstat(journalPath); } catch (error) {
+    if (error?.code === "ENOENT") journalExists = false;
+    else throw error;
+  }
+  if (journalExists) {
+    await regularFile(journalPath, "journal");
+    const manifest = await verifyEvidenceManifest({ runDirectory: root });
+    const bootstrap = manifest.artifacts[0];
+    if (!bootstrap || bootstrap.path !== "artifacts/0001-input.json" || bootstrap.category !== "input") invalid("bootstrap input artifact is invalid");
+    let record;
+    try { record = JSON.parse(await readFile(path.join(root, bootstrap.path), "utf8")); } catch { invalid("bootstrap input artifact is malformed"); }
+    if (!isObject(record) || record.sequence !== 1 || record.category !== "input" || record.transition !== "prepare-item" || record.type !== "run-initialized" || !("input" in record) || JSON.stringify(record.input) !== JSON.stringify(input)) invalid("run input does not match existing journal");
+    for (const [index, artifact] of manifest.artifacts.entries()) {
+      if (artifact.path !== `artifacts/${String(index + 1).padStart(4, "0")}-${artifact.category}.json`) invalid("artifact sequence is invalid");
+    }
+    artifacts = [...manifest.artifacts];
+    sequence = artifacts.length;
+  }
   async function append(event) {
     if (!isObject(event) || !CATEGORIES.has(event.category) || !TRANSITIONS.has(event.transition)) throw new TypeError("journal event requires a known category and guarded transition");
     const record = Object.freeze({ sequence: sequence += 1, at: new Date().toISOString(), ...event });
@@ -85,6 +104,6 @@ export async function createEvidenceJournal({ runDirectory, input = {} } = {}) {
     return record;
   }
   // Bootstrap retains a complete typed set; later action records establish the specific linkage.
-  for (const category of REQUIRED_EVIDENCE_CATEGORIES) await append({ category, transition: "prepare-item", type: "run-initialized", input: category === "input" ? input : undefined });
+  if (artifacts.length === 0) for (const category of REQUIRED_EVIDENCE_CATEGORIES) await append({ category, transition: "prepare-item", type: "run-initialized", input: category === "input" ? input : undefined });
   return Object.freeze({ append, runDirectory: root, journalPath, artifacts: () => [...artifacts] });
 }

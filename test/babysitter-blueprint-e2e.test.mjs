@@ -162,6 +162,33 @@ test("evidence manifest is strict and hash verified", async (t) => {
   }
 });
 
+test("evidence journal reopens an identical replay without replacing bootstrap evidence", async (t) => {
+  const { createEvidenceJournal, verifyEvidenceManifest } = await loadEvidence();
+  await t.test("continues an implementation replay with its original manifest", async () => {
+    await withFixture({}, async (root) => {
+      const runDirectory = path.join(root, "run");
+      const input = { itemId: "wi-005", cwd: root, targetBranch: null };
+      const initial = await createEvidenceJournal({ runDirectory, input });
+      await initial.append({ category: "command", transition: "state-transition", type: "implementation-resolved" });
+      const reopened = await createEvidenceJournal({ runDirectory, input });
+      const continued = await reopened.append({ category: "integration", transition: "integration-deliver", type: "delivery-gates-requested" });
+      assert.equal(continued.sequence, 10);
+      const manifest = await verifyEvidenceManifest({ runDirectory, expectedTransition: "integration-deliver" });
+      assert.equal(manifest.artifacts.length, 10);
+      assert.deepEqual(JSON.parse(await readFile(path.join(runDirectory, "artifacts", "0001-input.json"), "utf8")).input, input);
+    });
+  });
+  await t.test("rejects a mismatched or tampered replay input", async () => {
+    await withFixture({}, async (root) => {
+      const runDirectory = path.join(root, "run");
+      await createEvidenceJournal({ runDirectory, input: { itemId: "wi-005" } });
+      await assert.rejects(createEvidenceJournal({ runDirectory, input: { itemId: "wi-006" } }), /input/i);
+      await writeFile(path.join(runDirectory, "artifacts", "0001-input.json"), "tampered\\n");
+      await assert.rejects(createEvidenceJournal({ runDirectory, input: { itemId: "wi-005" } }), /hash|artifact|input/i);
+    });
+  });
+});
+
 test("evidence rejects external manifests, symlink artifacts, and missing action linkage", async (t) => {
   const { verifyEvidenceManifest } = await loadEvidence();
   await t.test("rejects external manifest and symlink artifact", async () => {
@@ -408,11 +435,10 @@ test("generated DV process replays intrinsic pending effects and pauses ordinary
       await assert.rejects(generated(inputs, ctx), requested("implementation"));
       implementationResolved = true;
       execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
-      const continued = { runInput: { ...inputs.runInput, runDirectory: path.join(workspace, ".a5c/runs/wi-005-continuation") } };
-      await assert.rejects(generated(continued, ctx), pending("delivery-gates"));
+      await assert.rejects(generated(inputs, ctx), pending("delivery-gates"));
       deliveryFailsNormally = true;
       execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
-      const paused = await generated({ runInput: { ...continued.runInput, runDirectory: path.join(workspace, ".a5c/runs/wi-005-normal-failure") } }, ctx);
+      const paused = await generated(inputs, ctx);
       assert.deepEqual(paused, { status: "paused", reason: "delivery gate failed" });
     } finally {
       process.env.PATH = oldPath;
