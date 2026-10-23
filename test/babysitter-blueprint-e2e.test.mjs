@@ -363,7 +363,7 @@ test("fresh DV installation dispatches SDK-defined default delivery tasks", asyn
   });
 });
 
-test("generated DV process replays SDK task effects through the next delivery gate", async () => {
+test("generated DV process replays intrinsic pending effects and pauses ordinary delivery failures", async () => {
   const { process: install } = await loadDvInstaller();
   await withFixture({}, async (root) => {
     const workspace = path.join(root, "workspace");
@@ -373,7 +373,7 @@ test("generated DV process replays SDK task effects through the next delivery ga
     await mkdir(sdk, { recursive: true });
     await mkdir(bin, { recursive: true });
     await writeFile(path.join(sdk, "package.json"), JSON.stringify({ type: "module", exports: "./index.js" }));
-    await writeFile(path.join(sdk, "index.js"), `export function defineTask(id, build) { return Object.freeze({ id, build: async (args, ctx) => build(args, ctx) }); }\nexport class EffectRequestedError extends Error { constructor(action) { super(\`Effect \${action.effectId} requested\`); this.name = "EffectRequestedError"; this.isIntrinsic = true; this.action = action; } }\nexport class EffectPendingError extends Error { constructor(action) { super(\`Effect \${action.effectId} pending\`); this.name = "EffectPendingError"; this.action = action; } }\n`);
+    await writeFile(path.join(sdk, "index.js"), `export function defineTask(id, build) { return Object.freeze({ id, build: async (args, ctx) => build(args, ctx) }); }\nexport class EffectRequestedError extends Error { constructor(action) { super(\`Effect \${action.effectId} requested\`); this.name = "EffectRequestedError"; this.isIntrinsic = true; this.action = action; } }\nexport class EffectPendingError extends Error { constructor(action) { super(\`Effect \${action.effectId} pending\`); this.name = "EffectPendingError"; this.isIntrinsic = true; this.action = action; } }\n`);
     const dv = path.join(bin, "dv");
     await writeFile(dv, `#!/bin/sh\nprintf '%s\\n' '{"capability":"publisher-work-selection/v1","outcome":{"kind":"selected","workItemId":"wi-005"},"decisionArtifact":{"command":["dv","work","ready","--json"],"result":{"opaque":true}}}'\n`);
     chmodSync(dv, 0o755);
@@ -384,18 +384,24 @@ test("generated DV process replays SDK task effects through the next delivery ga
     execFileSync("git", ["add", "."], { cwd: workspace });
     execFileSync("git", ["commit", "-m", "fixture"], { cwd: workspace, stdio: "ignore" });
     await install({ dir: workspace, yes: true });
-    const { EffectRequestedError } = await import(pathToFileURL(path.join(sdk, "index.js")).href);
+    const { EffectPendingError, EffectRequestedError } = await import(pathToFileURL(path.join(sdk, "index.js")).href);
     const { process: generated } = await import(pathToFileURL(path.join(workspace, ".a5c/processes/babysitter-dv/process.mjs")).href);
     const calls = [];
     let implementationResolved = false;
-    const ctx = { task: async (task, args) => {
-      calls.push({ id: task.id, definition: await task.build(args, { effectId: `effect-${calls.length}` }) });
-      if (!implementationResolved) throw new EffectRequestedError({ effectId: "implementation" });
-      if (task.id === "babysitter-dv-default-implementation") return { status: "implemented" };
-      throw new EffectRequestedError({ effectId: "delivery-gates" });
-    } };
+    let deliveryFailsNormally = false;
+    const ctx = {
+      async task(task, args) {
+        calls.push({ id: task.id, definition: await task.build(args, { effectId: `effect-${calls.length}` }) });
+        if (!implementationResolved) throw new EffectRequestedError({ effectId: "implementation" });
+        if (task.id === "babysitter-dv-default-implementation") return { status: "implemented" };
+        if (deliveryFailsNormally) throw new Error("delivery gate failed");
+        throw new EffectPendingError({ effectId: "delivery-gates" });
+      },
+      halt(_reason, { outcome }) { return outcome; },
+    };
     const inputs = { runInput: { itemId: "wi-005", cwd: workspace, runDirectory: path.join(workspace, ".a5c/runs/wi-005") } };
     const requested = (effectId) => (error) => error instanceof EffectRequestedError && error.action.effectId === effectId;
+    const pending = (effectId) => (error) => error instanceof EffectPendingError && error.isIntrinsic === true && error.action.effectId === effectId;
     const oldPath = process.env.PATH;
     process.env.PATH = `${bin}:${oldPath}`;
     try {
@@ -403,12 +409,16 @@ test("generated DV process replays SDK task effects through the next delivery ga
       implementationResolved = true;
       execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
       const continued = { runInput: { ...inputs.runInput, runDirectory: path.join(workspace, ".a5c/runs/wi-005-continuation") } };
-      await assert.rejects(generated(continued, ctx), requested("delivery-gates"));
+      await assert.rejects(generated(continued, ctx), pending("delivery-gates"));
+      deliveryFailsNormally = true;
+      execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
+      const paused = await generated({ runInput: { ...continued.runInput, runDirectory: path.join(workspace, ".a5c/runs/wi-005-normal-failure") } }, ctx);
+      assert.deepEqual(paused, { status: "paused", reason: "delivery gate failed" });
     } finally {
       process.env.PATH = oldPath;
     }
-    assert.deepEqual(calls.map(({ id }) => id), ["babysitter-dv-default-implementation", "babysitter-dv-default-implementation", "babysitter-dv-default-delivery-gates"]);
-    assert.deepEqual(calls.map(({ definition }) => definition.kind), ["agent", "agent", "agent"]);
+    assert.deepEqual(calls.map(({ id }) => id), ["babysitter-dv-default-implementation", "babysitter-dv-default-implementation", "babysitter-dv-default-delivery-gates", "babysitter-dv-default-implementation", "babysitter-dv-default-delivery-gates"]);
+    assert.deepEqual(calls.map(({ definition }) => definition.kind), ["agent", "agent", "agent", "agent", "agent"]);
   });
 });
 
