@@ -363,6 +363,55 @@ test("fresh DV installation dispatches SDK-defined default delivery tasks", asyn
   });
 });
 
+test("generated DV process replays SDK task effects through the next delivery gate", async () => {
+  const { process: install } = await loadDvInstaller();
+  await withFixture({}, async (root) => {
+    const workspace = path.join(root, "workspace");
+    const sdk = path.join(root, "node_modules", "@a5c-ai", "babysitter-sdk");
+    const bin = path.join(root, "bin");
+    await mkdir(workspace, { recursive: true });
+    await mkdir(sdk, { recursive: true });
+    await mkdir(bin, { recursive: true });
+    await writeFile(path.join(sdk, "package.json"), JSON.stringify({ type: "module", exports: "./index.js" }));
+    await writeFile(path.join(sdk, "index.js"), `export function defineTask(id, build) { return Object.freeze({ id, build: async (args, ctx) => build(args, ctx) }); }\nexport class EffectRequestedError extends Error { constructor(action) { super(\`Effect \${action.effectId} requested\`); this.name = "EffectRequestedError"; this.isIntrinsic = true; this.action = action; } }\nexport class EffectPendingError extends Error { constructor(action) { super(\`Effect \${action.effectId} pending\`); this.name = "EffectPendingError"; this.action = action; } }\n`);
+    const dv = path.join(bin, "dv");
+    await writeFile(dv, `#!/bin/sh\nprintf '%s\\n' '{"capability":"publisher-work-selection/v1","outcome":{"kind":"selected","workItemId":"wi-005"},"decisionArtifact":{"command":["dv","work","ready","--json"],"result":{"opaque":true}}}'\n`);
+    chmodSync(dv, 0o755);
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: workspace });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+    await writeFile(path.join(workspace, "README.md"), "fixture\n");
+    execFileSync("git", ["add", "."], { cwd: workspace });
+    execFileSync("git", ["commit", "-m", "fixture"], { cwd: workspace, stdio: "ignore" });
+    await install({ dir: workspace, yes: true });
+    const { EffectRequestedError } = await import(pathToFileURL(path.join(sdk, "index.js")).href);
+    const { process: generated } = await import(pathToFileURL(path.join(workspace, ".a5c/processes/babysitter-dv/process.mjs")).href);
+    const calls = [];
+    let implementationResolved = false;
+    const ctx = { task: async (task, args) => {
+      calls.push({ id: task.id, definition: await task.build(args, { effectId: `effect-${calls.length}` }) });
+      if (!implementationResolved) throw new EffectRequestedError({ effectId: "implementation" });
+      if (task.id === "babysitter-dv-default-implementation") return { status: "implemented" };
+      throw new EffectRequestedError({ effectId: "delivery-gates" });
+    } };
+    const inputs = { runInput: { itemId: "wi-005", cwd: workspace, runDirectory: path.join(workspace, ".a5c/runs/wi-005") } };
+    const requested = (effectId) => (error) => error instanceof EffectRequestedError && error.action.effectId === effectId;
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${bin}:${oldPath}`;
+    try {
+      await assert.rejects(generated(inputs, ctx), requested("implementation"));
+      implementationResolved = true;
+      execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
+      const continued = { runInput: { ...inputs.runInput, runDirectory: path.join(workspace, ".a5c/runs/wi-005-continuation") } };
+      await assert.rejects(generated(continued, ctx), requested("delivery-gates"));
+    } finally {
+      process.env.PATH = oldPath;
+    }
+    assert.deepEqual(calls.map(({ id }) => id), ["babysitter-dv-default-implementation", "babysitter-dv-default-implementation", "babysitter-dv-default-delivery-gates"]);
+    assert.deepEqual(calls.map(({ definition }) => definition.kind), ["agent", "agent", "agent"]);
+  });
+});
+
 test("v6 package and operator documentation expose portable process contracts", async () => {
   const process = await import("../blueprints/babysitter-afk-v6/process.mjs");
   const packageMetadata = JSON.parse(await readFile(new URL("../blueprints/babysitter-afk-v6/package.json", import.meta.url), "utf8"));
