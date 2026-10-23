@@ -84,10 +84,7 @@ function reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targe
   if (!registration) throw new Error("refusing to reuse an unregistered worktree");
   let branch;
   try { branch = gitOutput(worktree, ["symbolic-ref", "--quiet", "--short", "HEAD"]); } catch {}
-  if (branch) {
-    if (!registration.split("\\n").includes("branch refs/heads/" + branch) || (ownership.deliveryBranch != null && ownership.deliveryBranch !== branch)) throw new Error("refusing to reuse an unexpected delivery branch");
-    if (ownership.deliveryBranch == null) writeFileSync(ownershipPath, JSON.stringify({ ...ownership, deliveryBranch: branch }) + "\\n", { mode: 0o600 });
-  }
+  if (branch && (!registration.split("\\n").includes("branch refs/heads/" + branch) || ownership.deliveryBranch !== branch)) throw new Error("refusing to reuse an unexpected delivery branch");
   try { gitOutput(worktree, ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"]); } catch { throw new Error("refusing to reuse a worktree at an unexpected ref"); }
 }
 

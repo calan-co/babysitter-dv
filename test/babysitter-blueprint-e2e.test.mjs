@@ -435,7 +435,16 @@ test("generated DV process reuses its owned worktree after implementation resolv
     try {
       await assert.rejects(generated(inputs, ctx), requested("implementation"));
       assert.equal(existsSync(worktree), true);
+      const ownershipPath = path.join(path.dirname(worktree), ".babysitter-dv", Buffer.from("wi-005").toString("hex") + ".json");
+      execFileSync("git", ["switch", "-c", "foreign/wi-005"], { cwd: worktree, stdio: "ignore" });
+      const ownership = JSON.parse(await readFile(ownershipPath, "utf8"));
+      execFileSync("git", ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"], { cwd: worktree });
+      const foreignBeforeRecording = await generated(inputs, ctx);
+      assert.deepEqual(foreignBeforeRecording, { status: "paused", reason: "refusing to reuse an unexpected delivery branch" });
+      assert.equal(JSON.parse(await readFile(ownershipPath, "utf8")).deliveryBranch, null);
+      execFileSync("git", ["switch", "--detach"], { cwd: worktree, stdio: "ignore" });
       execFileSync("git", ["switch", "-c", "delivery/wi-005-pr-7"], { cwd: worktree, stdio: "ignore" });
+      await writeFile(ownershipPath, JSON.stringify({ ...ownership, deliveryBranch: "delivery/wi-005-pr-7" }) + "\n");
       writeFileSync(path.join(worktree, "README.md"), "delivery branch\n");
       execFileSync("git", ["add", "README.md"], { cwd: worktree });
       execFileSync("git", ["commit", "-m", "Prepare PR #7"], { cwd: worktree, stdio: "ignore" });
@@ -445,7 +454,7 @@ test("generated DV process reuses its owned worktree after implementation resolv
       deliveryFailsNormally = true;
       const paused = await generated(inputs, ctx);
       assert.deepEqual(paused, { status: "paused", reason: "delivery gate failed" });
-      execFileSync("git", ["switch", "-c", "foreign/wi-005"], { cwd: worktree, stdio: "ignore" });
+      execFileSync("git", ["switch", "foreign/wi-005"], { cwd: worktree, stdio: "ignore" });
       const foreignCollision = await generated(inputs, ctx);
       assert.deepEqual(foreignCollision, { status: "paused", reason: "refusing to reuse an unexpected delivery branch" });
       rmSync(path.join(path.dirname(worktree), ".babysitter-dv", Buffer.from("wi-005").toString("hex") + ".json"));
