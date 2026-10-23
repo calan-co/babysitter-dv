@@ -80,10 +80,13 @@ function reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targe
     commonDir = realpathSync(path.resolve(worktreeRoot, gitOutput(worktree, ["rev-parse", "--git-common-dir"])));
   } catch { throw new Error("refusing to reuse a non-Git worktree"); }
   if (worktreeRoot !== worktree || commonDir !== repository.commonDir) throw new Error("refusing to reuse a foreign worktree");
-  const registered = gitOutput(repository.root, ["worktree", "list", "--porcelain"]).split("\\n").includes("worktree " + worktree);
-  if (!registered) throw new Error("refusing to reuse an unregistered worktree");
-  try { if (gitOutput(worktree, ["symbolic-ref", "--quiet", "HEAD"])) throw new Error("refusing to reuse a branch worktree"); } catch (error) {
-    if (error?.message === "refusing to reuse a branch worktree") throw error;
+  const registration = gitOutput(repository.root, ["worktree", "list", "--porcelain"]).split("\\n\\n").find((entry) => entry.startsWith("worktree " + worktree + "\\n") || entry === "worktree " + worktree);
+  if (!registration) throw new Error("refusing to reuse an unregistered worktree");
+  let branch;
+  try { branch = gitOutput(worktree, ["symbolic-ref", "--quiet", "--short", "HEAD"]); } catch {}
+  if (branch) {
+    if (!registration.split("\\n").includes("branch refs/heads/" + branch) || (ownership.deliveryBranch != null && ownership.deliveryBranch !== branch)) throw new Error("refusing to reuse an unexpected delivery branch");
+    if (ownership.deliveryBranch == null) writeFileSync(ownershipPath, JSON.stringify({ ...ownership, deliveryBranch: branch }) + "\\n", { mode: 0o600 });
   }
   try { gitOutput(worktree, ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"]); } catch { throw new Error("refusing to reuse a worktree at an unexpected ref"); }
 }
@@ -127,7 +130,7 @@ function createDefaultPorts({ ctx, workspace }) {
         mkdirSync(worktreeRoot, { recursive: true });
         execFileSync("git", ["worktree", "add", "--detach", worktree, targetBaseSha], { cwd, stdio: "ignore" });
         mkdirSync(path.dirname(ownershipPath), { recursive: true });
-        writeFileSync(ownershipPath, JSON.stringify({ itemId, worktree, repository: repository.commonDir, targetRef, targetBaseSha }) + "\\n", { mode: 0o600 });
+        writeFileSync(ownershipPath, JSON.stringify({ itemId, worktree, repository: repository.commonDir, targetRef, targetBaseSha, deliveryBranch: null }) + "\\n", { mode: 0o600 });
         return { itemId, worktree, targetBranch: targetBranch ?? null };
       },
     },
