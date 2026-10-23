@@ -10,7 +10,7 @@ const PROCESS_INDEX_PACKAGE = `${JSON.stringify({ type: "commonjs" }, null, 2)}\
 const PROCESS_WRAPPER = `exports.process = async function babysitterDv(inputs, ctx) {\n  return (await import("./babysitter-dv/process.mjs")).process(inputs, ctx);\n};\n`;
 
 const PROCESS = `import { execFile, execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { defineTask } from "@a5c-ai/babysitter-sdk";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -52,6 +52,42 @@ async function optionalOverridePorts(configModule, runInput) {
   return resolvePorts(runInput);
 }
 
+function gitOutput(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
+function worktreeOwnershipPath(worktreeRoot, itemId) {
+  return path.join(worktreeRoot, ".babysitter-dv", Buffer.from(itemId).toString("hex") + ".json");
+}
+
+function repositoryIdentity(cwd) {
+  const root = realpathSync(gitOutput(cwd, ["rev-parse", "--show-toplevel"]));
+  const commonDir = realpathSync(path.resolve(root, gitOutput(cwd, ["rev-parse", "--git-common-dir"])));
+  return { root, commonDir };
+}
+
+function reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targetRef }) {
+  let ownership;
+  try { ownership = JSON.parse(readFileSync(ownershipPath, "utf8")); } catch { throw new Error("refusing to reuse an unowned worktree"); }
+  if (
+    ownership?.itemId !== itemId || ownership.worktree !== worktree || ownership.repository !== repository.commonDir
+    || ownership.targetRef !== targetRef || !/^[0-9a-f]{40}$/i.test(ownership.targetBaseSha)
+  ) throw new Error("refusing to reuse a mismatched worktree");
+  let worktreeRoot;
+  let commonDir;
+  try {
+    worktreeRoot = realpathSync(gitOutput(worktree, ["rev-parse", "--show-toplevel"]));
+    commonDir = realpathSync(path.resolve(worktreeRoot, gitOutput(worktree, ["rev-parse", "--git-common-dir"])));
+  } catch { throw new Error("refusing to reuse a non-Git worktree"); }
+  if (worktreeRoot !== worktree || commonDir !== repository.commonDir) throw new Error("refusing to reuse a foreign worktree");
+  const registered = gitOutput(repository.root, ["worktree", "list", "--porcelain"]).split("\\n").includes("worktree " + worktree);
+  if (!registered) throw new Error("refusing to reuse an unregistered worktree");
+  try { if (gitOutput(worktree, ["symbolic-ref", "--quiet", "HEAD"])) throw new Error("refusing to reuse a branch worktree"); } catch (error) {
+    if (error?.message === "refusing to reuse a branch worktree") throw error;
+  }
+  try { gitOutput(worktree, ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"]); } catch { throw new Error("refusing to reuse a worktree at an unexpected ref"); }
+}
+
 function createDefaultPorts({ ctx, workspace }) {
   return {
     publisherSelection: {
@@ -76,10 +112,22 @@ function createDefaultPorts({ ctx, workspace }) {
     worktreeTransaction: {
       withEvidenceGuard() {},
       async prepareItem({ itemId, cwd, targetBranch } = {}) {
-        const worktreeRoot = path.join(workspace, ".a5c/worktrees");
+        const worktreeRoot = path.join(realpathSync(workspace), ".a5c/worktrees");
+        const worktree = path.resolve(worktreeRoot, itemId);
+        if (path.dirname(worktree) !== worktreeRoot) throw new Error("work item ID must name one worktree directory");
+        const targetRef = targetBranch ?? "HEAD";
+        const repository = repositoryIdentity(cwd);
+        const ownershipPath = worktreeOwnershipPath(worktreeRoot, itemId);
+        if (existsSync(worktree)) {
+          reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targetRef });
+          return { itemId, worktree, targetBranch: targetBranch ?? null };
+        }
+        if (existsSync(ownershipPath)) throw new Error("refusing to replace a missing owned worktree");
+        const targetBaseSha = gitOutput(cwd, ["rev-parse", "--verify", targetRef]);
         mkdirSync(worktreeRoot, { recursive: true });
-        const worktree = path.join(worktreeRoot, itemId);
-        execFileSync("git", ["worktree", "add", "--detach", worktree, targetBranch ?? "HEAD"], { cwd, stdio: "ignore" });
+        execFileSync("git", ["worktree", "add", "--detach", worktree, targetBaseSha], { cwd, stdio: "ignore" });
+        mkdirSync(path.dirname(ownershipPath), { recursive: true });
+        writeFileSync(ownershipPath, JSON.stringify({ itemId, worktree, repository: repository.commonDir, targetRef, targetBaseSha }) + "\\n", { mode: 0o600 });
         return { itemId, worktree, targetBranch: targetBranch ?? null };
       },
     },

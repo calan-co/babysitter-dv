@@ -390,7 +390,7 @@ test("fresh DV installation dispatches SDK-defined default delivery tasks", asyn
   });
 });
 
-test("generated DV process replays intrinsic pending effects and pauses ordinary delivery failures", async () => {
+test("generated DV process reuses its owned worktree after implementation resolves and requests delivery gates", async () => {
   const { process: install } = await loadDvInstaller();
   await withFixture({}, async (root) => {
     const workspace = path.join(root, "workspace");
@@ -427,19 +427,23 @@ test("generated DV process replays intrinsic pending effects and pauses ordinary
       halt(_reason, { outcome }) { return outcome; },
     };
     const inputs = { runInput: { itemId: "wi-005", cwd: workspace, runDirectory: path.join(workspace, ".a5c/runs/wi-005") } };
+    const worktree = path.join(workspace, ".a5c/worktrees/wi-005");
     const requested = (effectId) => (error) => error instanceof EffectRequestedError && error.action.effectId === effectId;
     const pending = (effectId) => (error) => error instanceof EffectPendingError && error.isIntrinsic === true && error.action.effectId === effectId;
     const oldPath = process.env.PATH;
     process.env.PATH = `${bin}:${oldPath}`;
     try {
       await assert.rejects(generated(inputs, ctx), requested("implementation"));
+      assert.equal(existsSync(worktree), true);
       implementationResolved = true;
-      execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
       await assert.rejects(generated(inputs, ctx), pending("delivery-gates"));
+      assert.equal(existsSync(worktree), true);
       deliveryFailsNormally = true;
-      execFileSync("git", ["worktree", "remove", "--force", path.join(workspace, ".a5c/worktrees/wi-005")], { cwd: workspace });
       const paused = await generated(inputs, ctx);
       assert.deepEqual(paused, { status: "paused", reason: "delivery gate failed" });
+      rmSync(path.join(path.dirname(worktree), ".babysitter-dv", Buffer.from("wi-005").toString("hex") + ".json"));
+      const collision = await generated(inputs, ctx);
+      assert.deepEqual(collision, { status: "paused", reason: "refusing to reuse an unowned worktree" });
     } finally {
       process.env.PATH = oldPath;
     }
