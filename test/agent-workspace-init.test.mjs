@@ -11,6 +11,13 @@ const script = path.join(root, "scripts", "init-agent-workspace.mjs");
 const run = (...args) => execFileSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const runFailure = (...args) => spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8" });
 
+function installSdkStub(target) {
+  const sdk = path.join(target, "node_modules", "@a5c-ai", "babysitter-sdk");
+  mkdirSync(sdk, { recursive: true });
+  writeFileSync(path.join(sdk, "package.json"), JSON.stringify({ type: "module", exports: "./index.js" }));
+  writeFileSync(path.join(sdk, "index.js"), `export function defineTask(id, build) { return Object.freeze({ id, build: async (args, ctx) => build(args, ctx) }); }\n`);
+}
+
 test("repository exposes self-contained Babysitter blueprint install packaging", async () => {
   const marketplace = JSON.parse(readFileSync(path.join(root, "marketplace.json"), "utf8"));
   assert.equal(marketplace.plugins["babysitter-dv"].packagePath, "blueprints/babysitter-dv");
@@ -81,6 +88,7 @@ test("workspace initializer writes a Babysitter-native backlog-drain process", a
 
     const processFile = path.join(target, ".a5c/processes/babysitter-dv/process.mjs");
     const wrapperFile = path.join(target, ".a5c/processes/babysitter-dv.js");
+    installSdkStub(target);
     const processIndexPackage = JSON.parse(readFileSync(path.join(target, ".a5c/processes/package.json"), "utf8"));
     const processPackage = JSON.parse(readFileSync(path.join(target, ".a5c/processes/babysitter-dv/package.json"), "utf8"));
     assert.equal(processIndexPackage.type, "commonjs");
@@ -108,6 +116,7 @@ test("generated backlog-drain process pauses on the first gated candidate", asyn
   const oldPath = process.env.PATH;
   try {
     JSON.parse(run("--dir", target, "--yes", "--json"));
+    installSdkStub(target);
     const bin = path.join(target, "bin");
     mkdirSync(bin);
     const dv = path.join(bin, "dv");
@@ -140,6 +149,7 @@ test("generated default adapter requires delivery gates after implementation rep
   const oldPath = process.env.PATH;
   try {
     JSON.parse(run("--dir", target, "--yes", "--json"));
+    installSdkStub(target);
     execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
     execFileSync("git", ["config", "user.email", "test@example.invalid"], { cwd: target });
     execFileSync("git", ["config", "user.name", "Test"], { cwd: target });

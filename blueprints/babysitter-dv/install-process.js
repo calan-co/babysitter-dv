@@ -11,12 +11,26 @@ const PROCESS_WRAPPER = `exports.process = async function babysitterDv(inputs, c
 
 const PROCESS = `import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { defineTask } from "@a5c-ai/babysitter-sdk";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createAfkDeliveryBlueprint } from "./src/afk-delivery-blueprint.js";
 import { createEvidenceJournal } from "./src/evidence-manifest.js";
 
 const execFileAsync = promisify(execFile);
+
+const defaultImplementationTask = defineTask("babysitter-dv-default-implementation", ({ itemId, prompt, agent }) => ({
+  kind: "agent",
+  title: "Implement " + itemId,
+  description: prompt,
+  agent: { name: agent, prompt },
+}));
+const defaultDeliveryGatesTask = defineTask("babysitter-dv-default-delivery-gates", ({ itemId, prompt, agent }) => ({
+  kind: "agent",
+  title: "Complete delivery gates for " + itemId,
+  description: prompt,
+  agent: { name: agent, prompt },
+}));
 
 async function readyItemIds(cwd) {
   const { stdout } = await execFileAsync("dv", ["work", "ready", "--json"], { cwd });
@@ -73,16 +87,10 @@ function createDefaultPorts({ ctx, workspace }) {
       async review({ item, implementer } = {}) {
         const itemId = item?.itemId;
         if (typeof ctx?.task !== "function") return { status: "paused", reason: "Babysitter task context unavailable for default implementation adapter", itemId };
-        const task = (id, title, prompt, agent = implementer ?? "babysitter-dv-implementer") => Object.assign(() => ({
-          kind: "agent",
-          title,
-          description: prompt,
-          agent: { name: agent, prompt },
-        }), { id });
         const implementationPrompt = "Resolve DV work item " + itemId + " in dedicated worktree " + item.worktree + " for workspace " + workspace + ". Implement the requested change and run focused validation. Return status \\\"delivered\\\" only if independent review, DV closure, commit evidence, and integration are also complete; otherwise return status \\\"paused\\\" with exactly what remains.";
-        const result = await ctx.task(task("babysitter-dv-default-implementation", "Implement " + itemId, implementationPrompt), { itemId, workspace, worktree: item.worktree, prompt: implementationPrompt });
+        const result = await ctx.task(defaultImplementationTask, { itemId, workspace, worktree: item.worktree, prompt: implementationPrompt, agent: implementer ?? "babysitter-dv-implementer" });
         const gatePrompt = "Continue DV work item " + itemId + " from existing worktree " + item.worktree + ". Complete the remaining delivery gates only: independent review by someone other than the implementer, required remediation if review requests changes, commit/closure evidence, DV closure, and integration into the target branch. Return status \\\"delivered\\\" only after all gates are complete; otherwise return status \\\"paused\\\" with recovery notes.";
-        const gated = await ctx.task(task("babysitter-dv-default-delivery-gates", "Complete delivery gates for " + itemId, gatePrompt, "babysitter-dv-reviewer"), { itemId, workspace, worktree: item.worktree, previous: result, prompt: gatePrompt });
+        const gated = await ctx.task(defaultDeliveryGatesTask, { itemId, workspace, worktree: item.worktree, previous: result, prompt: gatePrompt, agent: "babysitter-dv-reviewer" });
         return gated && typeof gated.status === "string" ? gated : { status: "paused", reason: "delivery gate task did not return a delivery outcome", result: gated };
       },
     },

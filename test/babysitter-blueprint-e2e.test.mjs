@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const loadBlueprint = () => import("../src/afk-delivery-blueprint.js");
@@ -12,6 +13,7 @@ const loadEvidence = () => import("../src/evidence-manifest.js");
 const loadOverride = () => import("../src/repository-override-loader.js");
 const loadCoordinator = () => import("../src/review-remediation-coordinator.js");
 const loadTransaction = () => import("../src/git-worktree-transaction.js");
+const loadDvInstaller = () => import("../blueprints/babysitter-dv/install-process.js");
 
 const sha256 = (contents) => createHash("sha256").update(contents).digest("hex");
 const categories = ["input", "command", "dv", "review", "diff", "commit", "integration", "hash"];
@@ -313,6 +315,51 @@ test("v6 process resolves ports from JSON-selected importable configuration", as
     assert.equal(result.status, "delivered");
     await assert.rejects(process({ runInput: {} }, { task: async () => ({}) }), /configModule/i);
     await assert.rejects(process({ configModule: "../ports.mjs", runInput: {} }, { task: async () => ({}) }), /absolute.*mjs/i);
+  });
+});
+
+test("fresh DV installation dispatches SDK-defined default delivery tasks", async () => {
+  const { process: install } = await loadDvInstaller();
+  await withFixture({}, async (root) => {
+    const workspace = path.join(root, "workspace");
+    const sdk = path.join(root, "node_modules", "@a5c-ai", "babysitter-sdk");
+    const bin = path.join(root, "bin");
+    await mkdir(workspace, { recursive: true });
+    await mkdir(sdk, { recursive: true });
+    await mkdir(bin, { recursive: true });
+    await writeFile(path.join(sdk, "package.json"), JSON.stringify({ type: "module", exports: "./index.js" }));
+    await writeFile(path.join(sdk, "index.js"), `export function defineTask(id, build) { return Object.freeze({ id, build: async (args, ctx) => build(args, ctx) }); }\n`);
+    const dv = path.join(bin, "dv");
+    await writeFile(dv, `#!/bin/sh\nprintf '%s\\n' '{"capability":"publisher-work-selection/v1","outcome":{"kind":"selected","workItemId":"wi-005"},"decisionArtifact":{"command":["dv","work","ready","--json"],"result":{"opaque":true}}}'\n`);
+    chmodSync(dv, 0o755);
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: workspace });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+    await writeFile(path.join(workspace, "README.md"), "fixture\n");
+    execFileSync("git", ["add", "."], { cwd: workspace });
+    execFileSync("git", ["commit", "-m", "fixture"], { cwd: workspace, stdio: "ignore" });
+    assert.equal((await install({ dir: workspace, yes: true })).status, "written");
+    assert.equal(existsSync(path.join(workspace, "node_modules")), false);
+    const calls = [];
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${bin}:${oldPath}`;
+    try {
+      const { process: generated } = await import(pathToFileURL(path.join(workspace, ".a5c/processes/babysitter-dv/process.mjs")).href);
+      const result = await generated({ runInput: { itemId: "wi-005", cwd: workspace, runDirectory: path.join(workspace, ".a5c/runs/wi-005") } }, {
+        task: async (task, args) => {
+          assert.equal(typeof task, "object");
+          assert.equal(typeof task?.id, "string");
+          assert.equal(typeof task?.build, "function");
+          calls.push({ id: task.id, definition: await task.build(args, { effectId: `effect-${calls.length}` }) });
+          return calls.length === 2 ? { status: "delivered" } : { status: "implemented" };
+        },
+      });
+      assert.equal(result.status, "delivered");
+    } finally {
+      process.env.PATH = oldPath;
+    }
+    assert.deepEqual(calls.map(({ id }) => id), ["babysitter-dv-default-implementation", "babysitter-dv-default-delivery-gates"]);
+    assert.deepEqual(calls.map(({ definition }) => definition.kind), ["agent", "agent"]);
   });
 });
 
