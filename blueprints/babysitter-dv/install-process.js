@@ -10,7 +10,7 @@ const PROCESS_INDEX_PACKAGE = `${JSON.stringify({ type: "commonjs" }, null, 2)}\
 const PROCESS_WRAPPER = `exports.process = async function babysitterDv(inputs, ctx) {\n  return (await import("./babysitter-dv/process.mjs")).process(inputs, ctx);\n};\n`;
 
 const PROCESS = `import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { defineTask } from "@a5c-ai/babysitter-sdk";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -66,6 +66,17 @@ function repositoryIdentity(cwd) {
   return { root, commonDir };
 }
 
+function isOwnedDeliveryBranch(itemId, branch) {
+  const prefix = "worktree/" + itemId + "-";
+  return branch.startsWith(prefix) && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(branch.slice(prefix.length));
+}
+
+function persistDeliveryBranch(ownershipPath, ownership, branch) {
+  const temporaryPath = ownershipPath + "." + globalThis.process.pid + ".tmp";
+  writeFileSync(temporaryPath, JSON.stringify({ ...ownership, deliveryBranch: branch }) + "\\n", { mode: 0o600 });
+  renameSync(temporaryPath, ownershipPath);
+}
+
 function reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targetRef }) {
   let ownership;
   try { ownership = JSON.parse(readFileSync(ownershipPath, "utf8")); } catch { throw new Error("refusing to reuse an unowned worktree"); }
@@ -82,10 +93,14 @@ function reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targe
   if (worktreeRoot !== worktree || commonDir !== repository.commonDir) throw new Error("refusing to reuse a foreign worktree");
   const registration = gitOutput(repository.root, ["worktree", "list", "--porcelain"]).split("\\n\\n").find((entry) => entry.startsWith("worktree " + worktree + "\\n") || entry === "worktree " + worktree);
   if (!registration) throw new Error("refusing to reuse an unregistered worktree");
+  try { gitOutput(worktree, ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"]); } catch { throw new Error("refusing to reuse a worktree at an unexpected ref"); }
   let branch;
   try { branch = gitOutput(worktree, ["symbolic-ref", "--quiet", "--short", "HEAD"]); } catch {}
-  if (branch && (!registration.split("\\n").includes("branch refs/heads/" + branch) || ownership.deliveryBranch !== branch)) throw new Error("refusing to reuse an unexpected delivery branch");
-  try { gitOutput(worktree, ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"]); } catch { throw new Error("refusing to reuse a worktree at an unexpected ref"); }
+  if (!branch) return;
+  if (!registration.split("\\n").includes("branch refs/heads/" + branch)) throw new Error("refusing to reuse an unexpected delivery branch");
+  if (ownership.deliveryBranch === branch) return;
+  if (ownership.deliveryBranch == null && isOwnedDeliveryBranch(itemId, branch)) return persistDeliveryBranch(ownershipPath, ownership, branch);
+  throw new Error("refusing to reuse an unexpected delivery branch");
 }
 
 function createDefaultPorts({ ctx, workspace }) {

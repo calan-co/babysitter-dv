@@ -436,20 +436,22 @@ test("generated DV process reuses its owned worktree after implementation resolv
       await assert.rejects(generated(inputs, ctx), requested("implementation"));
       assert.equal(existsSync(worktree), true);
       const ownershipPath = path.join(path.dirname(worktree), ".babysitter-dv", Buffer.from("wi-005").toString("hex") + ".json");
-      execFileSync("git", ["switch", "-c", "foreign/wi-005"], { cwd: worktree, stdio: "ignore" });
       const ownership = JSON.parse(await readFile(ownershipPath, "utf8"));
-      execFileSync("git", ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"], { cwd: worktree });
-      const foreignBeforeRecording = await generated(inputs, ctx);
-      assert.deepEqual(foreignBeforeRecording, { status: "paused", reason: "refusing to reuse an unexpected delivery branch" });
-      assert.equal(JSON.parse(await readFile(ownershipPath, "utf8")).deliveryBranch, null);
+      for (const branch of ["foreign/wi-005", "worktree/wi-005-", "worktree/wi-005-release/validation"]) {
+        execFileSync("git", ["switch", "--detach"], { cwd: worktree, stdio: "ignore" });
+        execFileSync("git", ["switch", "-c", branch], { cwd: worktree, stdio: "ignore" });
+        execFileSync("git", ["merge-base", "--is-ancestor", ownership.targetBaseSha, "HEAD"], { cwd: worktree });
+        assert.deepEqual(await generated(inputs, ctx), { status: "paused", reason: "refusing to reuse an unexpected delivery branch" });
+        assert.equal(JSON.parse(await readFile(ownershipPath, "utf8")).deliveryBranch, null);
+      }
       execFileSync("git", ["switch", "--detach"], { cwd: worktree, stdio: "ignore" });
-      execFileSync("git", ["switch", "-c", "delivery/wi-005-pr-7"], { cwd: worktree, stdio: "ignore" });
-      await writeFile(ownershipPath, JSON.stringify({ ...ownership, deliveryBranch: "delivery/wi-005-pr-7" }) + "\n");
+      execFileSync("git", ["switch", "-c", "worktree/wi-005-release-validation-gates"], { cwd: worktree, stdio: "ignore" });
       writeFileSync(path.join(worktree, "README.md"), "delivery branch\n");
       execFileSync("git", ["add", "README.md"], { cwd: worktree });
       execFileSync("git", ["commit", "-m", "Prepare PR #7"], { cwd: worktree, stdio: "ignore" });
       implementationResolved = true;
       await assert.rejects(generated(inputs, ctx), pending("delivery-gates"));
+      assert.equal(JSON.parse(await readFile(ownershipPath, "utf8")).deliveryBranch, "worktree/wi-005-release-validation-gates");
       assert.equal(existsSync(worktree), true);
       deliveryFailsNormally = true;
       const paused = await generated(inputs, ctx);
