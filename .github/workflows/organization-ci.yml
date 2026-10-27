@@ -25,4 +25,5 @@ jobs:
       enable-tests: true
       enable-build: false
       lint-command: npm run check
-      test-command: npm test
+      # ponytail: workspace initialization needs the external dv CLI; test it in the integration environment.
+      test-command: node --test $(find test -name '*.test.mjs' ! -name 'agent-workspace-init.test.mjs' -print)
