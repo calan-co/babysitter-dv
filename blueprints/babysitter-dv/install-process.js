@@ -103,7 +103,7 @@ function reuseOwnedWorktree({ itemId, worktree, ownershipPath, repository, targe
   throw new Error("refusing to reuse an unexpected delivery branch");
 }
 
-function createDefaultPorts({ ctx, workspace }) {
+function createDefaultPorts({ ctx, workspace, implementationSource }) {
   return {
     publisherSelection: {
       async select(request) {
@@ -150,9 +150,10 @@ function createDefaultPorts({ ctx, workspace }) {
       async review({ item, implementer } = {}) {
         const itemId = item?.itemId;
         if (typeof ctx?.task !== "function") return { status: "paused", reason: "Babysitter task context unavailable for default implementation adapter", itemId };
-        const implementationPrompt = "Resolve DV work item " + itemId + " in dedicated worktree " + item.worktree + " for workspace " + workspace + ". Implement the requested change and run focused validation. Return status \\\"delivered\\\" only if independent review, DV closure, commit evidence, and integration are also complete; otherwise return status \\\"paused\\\" with exactly what remains.";
+        const sourceContext = implementationSource ? " Use the explicitly authorized implementation source worktree " + implementationSource + "; the publisher-selected delivery worktree remains " + item.worktree + "." : "";
+        const implementationPrompt = "Resolve DV work item " + itemId + " in dedicated worktree " + item.worktree + " for workspace " + workspace + "." + sourceContext + " Implement the requested change and run focused validation. Return status \\\"delivered\\\" only if independent review, DV closure, commit evidence, and integration are also complete; otherwise return status \\\"paused\\\" with exactly what remains.";
         const result = await ctx.task(defaultImplementationTask, { itemId, workspace, worktree: item.worktree, prompt: implementationPrompt, agent: implementer ?? "babysitter-dv-implementer" });
-        const gatePrompt = "Continue DV work item " + itemId + " from existing worktree " + item.worktree + ". Complete the remaining delivery gates only: independent review by someone other than the implementer, required remediation if review requests changes, commit/closure evidence, DV closure, and integration into the target branch. Return status \\\"delivered\\\" only after all gates are complete; otherwise return status \\\"paused\\\" with recovery notes.";
+        const gatePrompt = "Continue DV work item " + itemId + " from existing worktree " + item.worktree + "." + sourceContext + " Complete the remaining delivery gates only: independent review by someone other than the implementer, required remediation if review requests changes, commit/closure evidence, DV closure, and integration into the target branch. Return status \\\"delivered\\\" only after all gates are complete; otherwise return status \\\"paused\\\" with recovery notes.";
         const gated = await ctx.task(defaultDeliveryGatesTask, { itemId, workspace, worktree: item.worktree, previous: result, prompt: gatePrompt, agent: "babysitter-dv-reviewer" });
         return gated && typeof gated.status === "string" ? gated : { status: "paused", reason: "delivery gate task did not return a delivery outcome", result: gated };
       },
@@ -161,7 +162,7 @@ function createDefaultPorts({ ctx, workspace }) {
 }
 
 async function runItem({ configModule, runInput, ctx, workspace }) {
-  const ports = await optionalOverridePorts(configModule, runInput) ?? createDefaultPorts({ ctx, workspace });
+  const ports = await optionalOverridePorts(configModule, runInput) ?? createDefaultPorts({ ctx, workspace, implementationSource: runInput.repositoryOverridePath ?? null });
   return createAfkDeliveryBlueprint(ports).run(runInput);
 }
 
@@ -196,7 +197,9 @@ export async function process(inputs = {}, ctx) {
 const PROCESS_PACKAGE = `${JSON.stringify({ type: "module" }, null, 2)}\n`;
 const INPUTS_EXAMPLE = `${JSON.stringify({
   workspace: "/absolute/path/to/workspace",
-  runInput: {}
+  runInput: {
+    repositoryOverridePath: "/absolute/path/to/authorized/implementation-source"
+  }
 }, null, 2)}\n`;
 const INSTALL_MD = await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "install.md"), "utf8");
 const CONFIGURE_MD = await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "configure.md"), "utf8");

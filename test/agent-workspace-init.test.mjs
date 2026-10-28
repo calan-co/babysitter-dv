@@ -176,13 +176,16 @@ printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"
       },
       halt: (reason, payload) => ({ reason, payload }),
     };
-    const outcome = await mod.process({ workspace: target, runInput: { itemId: "wi-1" } }, ctx);
+    const implementationSource = "/authorized/source-worktree";
+    const outcome = await mod.process({ workspace: target, runInput: { itemId: "wi-1", repositoryOverridePath: implementationSource } }, ctx);
     assert.equal(outcome.reason, "babysitter-dv-paused");
     assert.equal(outcome.payload.outcome.status, "paused");
     assert.equal(taskCalls.length, 2);
     assert.equal(taskCalls[0].itemId, "wi-1");
     assert.equal(taskCalls[1].previous.status, "delivered");
+    assert.match(taskCalls[0].prompt, new RegExp(implementationSource));
     assert.match(taskCalls[1].prompt, /remaining delivery gates only/);
+    assert.match(taskCalls[1].prompt, new RegExp(implementationSource));
     assert.match(taskCalls[0].worktree, /\.a5c\/worktrees\/wi-1$/);
     assert.equal(taskCalls[0].worktree, taskCalls[1].worktree);
     assert.equal(existsSync(taskCalls[0].worktree), true);

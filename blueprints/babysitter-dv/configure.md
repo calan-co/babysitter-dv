@@ -4,4 +4,6 @@ No `ports.mjs` is required for the default adapter. The installed process is the
 
 Optional advanced override: pass `configModule` in process inputs to replace the built-in adapter ports with a local `.mjs` module exporting `createPorts(runInput)` or a default function.
 
+For an explicitly authorized implementation source outside the publisher-selected delivery worktree, pass `runInput.repositoryOverridePath`. It is recorded in publisher-selection evidence and supplied to both implementation and delivery-gate tasks; it never replaces publisher-owned DV selection.
+
 With no `itemId` input, `.a5c/processes/babysitter-dv.js#process` repeatedly calls `dv work ready --json` and runs ready candidates until no unblocked work remains or a Babysitter-DV gate halts the run.
