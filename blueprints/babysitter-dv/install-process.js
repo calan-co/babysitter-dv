@@ -162,8 +162,9 @@ function createDefaultPorts({ ctx, workspace, implementationSource }) {
 }
 
 async function runItem({ configModule, runInput, ctx, workspace }) {
-  const ports = await optionalOverridePorts(configModule, runInput) ?? createDefaultPorts({ ctx, workspace, implementationSource: runInput.repositoryOverridePath ?? null });
-  return createAfkDeliveryBlueprint(ports).run(runInput);
+  const normalizedRunInput = runInput.repositoryOverridePath === "" ? { ...runInput, repositoryOverridePath: null } : runInput;
+  const ports = await optionalOverridePorts(configModule, normalizedRunInput) ?? createDefaultPorts({ ctx, workspace, implementationSource: normalizedRunInput.repositoryOverridePath ?? null });
+  return createAfkDeliveryBlueprint(ports).run(normalizedRunInput);
 }
 
 /** Project-local Babysitter-DV process. With no itemId, drains ready DV work until empty or halted. */

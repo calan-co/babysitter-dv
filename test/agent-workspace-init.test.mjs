@@ -195,6 +195,51 @@ printf '%s\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"
   }
 });
 
+test("generated default adapter normalizes an empty implementation source before selection", async () => {
+  const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
+  const oldPath = process.env.PATH;
+  try {
+    JSON.parse(run("--dir", target, "--yes", "--json"));
+    installSdkStub(target);
+    execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.invalid"], { cwd: target });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: target });
+    writeFileSync(path.join(target, "README.md"), "test\n");
+    execFileSync("git", ["add", "README.md"], { cwd: target });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: target, stdio: "ignore" });
+
+    const bin = path.join(target, "bin");
+    const selectionRequest = path.join(target, "selection-request.json");
+    mkdirSync(bin);
+    const dv = path.join(bin, "dv");
+    writeFileSync(dv, `#!/bin/sh
+cat > ${selectionRequest}
+printf '%s\\n' '{"capability":"publisher-work-selection/v1","decisionArtifact":{"command":["dv","work","select"],"result":{"ok":true}},"outcome":{"kind":"selected","workItemId":"wi-1"}}'
+`);
+    chmodSync(dv, 0o755);
+    process.env.PATH = `${bin}${path.delimiter}${oldPath}`;
+    const mod = await import(pathToFileURL(path.join(target, ".a5c/processes/babysitter-dv/process.mjs")));
+    const taskCalls = [];
+    const ctx = {
+      task: async (_task, args) => {
+        taskCalls.push(args);
+        return taskCalls.length === 1 ? { status: "delivered" } : { status: "paused", reason: "review missing" };
+      },
+      halt: (reason, payload) => ({ reason, payload }),
+    };
+
+    await mod.process({ workspace: target, runInput: { itemId: "wi-1", repositoryOverridePath: "" } }, ctx);
+    const request = JSON.parse(readFileSync(selectionRequest, "utf8"));
+    assert.equal(request.request.invocationContext.repositoryOverridePath, null);
+    assert.equal(taskCalls.length, 2);
+    assert.doesNotMatch(taskCalls[0].prompt, /explicitly authorized implementation source worktree/);
+    assert.doesNotMatch(taskCalls[1].prompt, /explicitly authorized implementation source worktree/);
+  } finally {
+    process.env.PATH = oldPath;
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
 test("workspace initializer leaves existing AGENTS.md untouched", () => {
   const target = mkdtempSync(path.join(os.tmpdir(), "babysitter-dv-init-"));
   try {
